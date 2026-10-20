@@ -68,7 +68,9 @@ Del celular a la PC:
 | `text` | `{text}` | Escribe el texto (admite tildes y ñ). |
 | `key` | `{key, ctrl}` | `esc`, `tab`, `left`, `right`, `enter`, `backspace` o un solo carácter. |
 
-Todos los eventos menos `hello` llevan además un número `n` que empieza en 1 con cada `hello`. Realtime puede entregar desordenados dos mensajes enviados casi juntos, así que la PC los ejecuta según ese número. Si falta uno, espera hasta 150 ms y, si no llega, sigue sin él (Broadcast no reintenta). El celular no envía órdenes hasta recibir `accepted`.
+Todos los eventos menos `hello` llevan además un número `n` que empieza en 1 con cada `hello`. Realtime puede entregar desordenados dos mensajes enviados casi juntos, así que la PC ejecuta clics, arrastres y teclas según ese número. Si falta uno, espera hasta 150 ms y, si no llega, sigue sin él (Broadcast no reintenta). `move` y `scroll` se aplican apenas llegan, porque sumar desplazamientos da lo mismo en cualquier orden; así el cursor nunca se frena esperando otro mensaje. Antes de un clic o una tecla, la PC termina de aplicar el movimiento pendiente. El celular no envía órdenes hasta recibir `accepted`.
+
+La PC no mueve el cursor de golpe con cada `move`: lo reparte en pasos de 4 ms durante los 33 ms que tarda en llegar el siguiente, para que se vea fluido. La latencia de punta a punta, medida pasando por Supabase en São Paulo, es de unos 100 ms.
 
 De la PC al celular: `status` con `{state: "pending" | "accepted" | "rejected" | "closed"}`.
 
@@ -107,7 +109,9 @@ python -m venv .venv
 .venv\Scripts\python vincle.py
 ```
 
-Para publicar una versión nueva del `.exe`, sube una etiqueta `v*`. El workflow `.github/workflows/release.yml` lo compila en Windows con PyInstaller y lo adjunta a la versión en Releases:
+Desde la v0.2.0, al abrirse, `Vincle.exe` pregunta a GitHub cuál es la última versión. Si hay una más nueva, muestra un aviso con el botón **Actualizar**. Al tocarlo, descarga el `.exe` nuevo junto al actual, comprueba su tamaño y su huella SHA-256 contra la que publica GitHub, renombra el actual a `Vincle.old.exe` (Windows permite renombrar un programa abierto, pero no borrarlo), pone el nuevo en su lugar y lo abre. La versión nueva borra `Vincle.old.exe` al arrancar.
+
+Para publicar una versión nueva del `.exe`, cambia `VERSION` en `desktop/vincle.py` y sube una etiqueta `v*` con el mismo número (el workflow se detiene si no coinciden). El workflow `.github/workflows/release.yml` lo compila en Windows con PyInstaller y lo adjunta a la versión en Releases:
 
 ```bash
 git tag v0.2.0

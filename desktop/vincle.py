@@ -7,23 +7,32 @@ obedecerle. El protocolo está descrito en el README.
 
 import asyncio
 import ctypes
+import hashlib
 import json
 import os
 import queue
 import socket
+import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import messagebox
 
+import httpx
 import segno
 from pynput.keyboard import Controller as Keyboard, Key, KeyCode
 from pynput.mouse import Button, Controller as Mouse
 from realtime import RealtimeSubscribeStates
 from supabase import AsyncClientOptions, acreate_client
 from supabase_auth import AsyncSupportedStorage
+
+# Debe coincidir con la etiqueta de la versión en GitHub (v0.2.0); el workflow lo verifica.
+VERSION = "0.2.0"
+RELEASES_API = "https://api.github.com/repos/FR4NCKP/vincle/releases/latest"
+EXE_NAME = "Vincle.exe"
 
 # Valores públicos: la seguridad la dan las políticas RLS, no el secreto de esta clave.
 SUPABASE_URL = "https://rmhuktsftptgrrzmqcon.supabase.co"
@@ -41,6 +50,7 @@ SCROLL_PX_PER_NOTCH = 40
 MAX_MOVE = 2000
 MAX_TEXT = 2000
 GAP_WAIT_S = 0.15
+CONTINUOUS_EVENTS = ("move", "scroll")
 SPECIAL_KEYS = {
     "esc": Key.esc,
     "tab": Key.tab,
@@ -80,6 +90,125 @@ class FileStorage(AsyncSupportedStorage):
             self.path.write_text(json.dumps(data), encoding="utf-8")
 
 
+def parse_version(tag: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in tag.lstrip("v").split("."))
+
+
+async def find_update() -> dict | None:
+    """Devuelve el Vincle.exe de la última versión publicada si es más nuevo que este."""
+    async with httpx.AsyncClient(timeout=10) as http:
+        res = await http.get(RELEASES_API, headers={"Accept": "application/vnd.github+json"})
+        res.raise_for_status()
+        release = res.json()
+    if parse_version(release["tag_name"]) <= parse_version(VERSION):
+        return None
+    asset = next((a for a in release["assets"] if a["name"] == EXE_NAME), None)
+    return asset and {"tag": release["tag_name"], **asset}
+
+
+async def install_update(exe: Path, asset: dict) -> None:
+    """Descarga la versión nueva junto al .exe actual, se intercambia con ella y la abre.
+
+    Windows no deja borrar un .exe en uso, pero sí renombrarlo: el actual pasa a
+    "<nombre>.old.exe" (la versión nueva lo borra al arrancar) y el nuevo toma su nombre."""
+    new = exe.with_name(exe.stem + ".new.exe")
+    old = exe.with_name(exe.stem + ".old.exe")
+    sha = hashlib.sha256()
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as http:
+        async with http.stream("GET", asset["browser_download_url"]) as res:
+            res.raise_for_status()
+            with new.open("wb") as f:
+                async for chunk in res.aiter_bytes():
+                    f.write(chunk)
+                    sha.update(chunk)
+    digest = asset.get("digest") or ""
+    if new.stat().st_size != asset["size"] or (
+        digest.startswith("sha256:") and digest != f"sha256:{sha.hexdigest()}"
+    ):
+        new.unlink(missing_ok=True)
+        raise ValueError("la descarga llegó incompleta o alterada")
+
+    old.unlink(missing_ok=True)
+    exe.rename(old)
+    try:
+        new.rename(exe)
+    except OSError:
+        old.rename(exe)  # se deja todo como estaba
+        raise
+    # Sin esta variable, el .exe nuevo de PyInstaller intentaría reutilizar los archivos
+    # temporales del actual, que se borran al cerrarse.
+    subprocess.Popen([str(exe)], env={**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"})
+
+
+def remove_old_exe() -> None:
+    if getattr(sys, "frozen", False):
+        exe = Path(sys.executable)
+        try:
+            exe.with_name(exe.stem + ".old.exe").unlink(missing_ok=True)
+        except OSError:
+            pass  # Si la versión anterior todavía se está cerrando, se borra la próxima vez.
+
+
+class Smoother:
+    """Mueve el cursor en pasos pequeños en vez de a saltos.
+
+    El celular manda el movimiento acumulado cada ~33 ms; aplicarlo de golpe se ve
+    entrecortado. Aquí cada movimiento se reparte en pasos de 4 ms a lo largo del tiempo que
+    falta para que llegue el siguiente, así el cursor avanza a velocidad pareja (a cambio
+    de, como mucho, un intervalo de retraso)."""
+
+    TICK_S = 0.004
+    SPREAD_S = 0.033  # igual al intervalo de envío del celular
+
+    def __init__(self, mouse: Mouse) -> None:
+        self.mouse = mouse
+        self.lock = threading.Lock()
+        self.wake = threading.Event()
+        self.left = [0.0, 0.0]  # movimiento que falta aplicar
+        self.time_left = 0.0  # en cuánto tiempo hay que terminar de aplicarlo
+        self.carry = [0.0, 0.0]  # fracciones de píxel que aún no suman uno
+        threading.Thread(target=self.run, daemon=True).start()
+
+    def add(self, x: float, y: float) -> None:
+        with self.lock:
+            self.left[0] += x
+            self.left[1] += y
+            self.time_left = self.SPREAD_S
+        self.wake.set()
+
+    def flush(self) -> None:
+        """Aplica ya todo lo pendiente: un clic debe caer donde el usuario ve el cursor."""
+        with self.lock:
+            dx, dy = self._take(1.0)
+        if dx or dy:
+            self.mouse.move(dx, dy)
+
+    def _take(self, share: float) -> tuple[int, int]:
+        out = []
+        for i in (0, 1):
+            step = self.left[i] * share
+            self.left[i] -= step
+            self.carry[i] += step
+            whole = int(self.carry[i])
+            self.carry[i] -= whole
+            out.append(whole)
+        return out[0], out[1]
+
+    def run(self) -> None:
+        while True:
+            self.wake.wait()
+            with self.lock:
+                if abs(self.left[0]) < 0.01 and abs(self.left[1]) < 0.01:
+                    self.wake.clear()
+                    continue
+                share = min(1.0, self.TICK_S / self.time_left) if self.time_left > 0 else 1.0
+                self.time_left = max(0.0, self.time_left - self.TICK_S)
+                dx, dy = self._take(share)
+            if dx or dy:
+                self.mouse.move(dx, dy)
+            time.sleep(self.TICK_S)  # Python 3.11+ usa temporizadores de alta resolución en Windows
+
+
 class Link:
     """Conexión con Supabase y ejecución de las órdenes. Vive en un hilo con su propio loop
     de asyncio; habla con la ventana solo a través de la cola `ui`."""
@@ -94,6 +223,7 @@ class Link:
         self.asking = False
         self.refresh_handle: asyncio.TimerHandle | None = None
         self.mouse = Mouse()
+        self.smoother = Smoother(self.mouse)
         self.keyboard = Keyboard()
         self.dragging = False
         self.scroll_rest = [0.0, 0.0]
@@ -108,9 +238,34 @@ class Link:
     def start(self) -> None:
         threading.Thread(target=self.loop.run_forever, daemon=True).start()
         self.call(self.connect())
+        self.call(self.check_update())
 
     def call(self, coro) -> None:
         asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+    # ---------- Actualización ----------
+
+    async def check_update(self) -> None:
+        if not getattr(sys, "frozen", False):
+            return  # Desde el código fuente no hay .exe que reemplazar.
+        for attempt in range(3):
+            try:
+                asset = await find_update()
+                break
+            except (httpx.HTTPError, ValueError, KeyError):
+                await asyncio.sleep(20)
+        else:
+            return  # Sin internet o GitHub no responde: se sigue con esta versión.
+        if asset:
+            self.ui.put(("update", asset))
+
+    async def update(self, asset: dict) -> None:
+        try:
+            await install_update(Path(sys.executable), asset)
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            self.ui.put(("update_failed", str(exc)))
+            return
+        self.ui.put(("restart",))
 
     # ---------- Sala ----------
 
@@ -228,12 +383,20 @@ class Link:
         n = (message.get("payload") or {}).get("n")
         if not isinstance(n, int) or n < self.next_seq or n > self.next_seq + 1000:
             return  # Repetido, ya dado por perdido o fuera de rango.
-        self.pending[n] = message
+        if message.get("event") in CONTINUOUS_EVENTS:
+            # Sumar desplazamientos da lo mismo en cualquier orden: se aplican al llegar y
+            # solo se deja su lugar marcado, para no frenar el cursor esperando a otro mensaje.
+            self.run(message)
+            self.pending[n] = None
+        else:
+            self.pending[n] = message
         self.drain()
 
     def drain(self) -> None:
         while self.next_seq in self.pending:
-            self.run(self.pending.pop(self.next_seq))
+            message = self.pending.pop(self.next_seq)
+            if message is not None:
+                self.run(message)
             self.next_seq += 1
         if self.pending and self.gap_handle is None:
             self.gap_handle = self.loop.call_later(GAP_WAIT_S, self.skip_gap)
@@ -253,9 +416,12 @@ class Link:
         self.next_seq = 1
 
     def run(self, message) -> None:
-        handler = getattr(self, f"do_{message.get('event')}", None)
+        event = message.get("event")
+        handler = getattr(self, f"do_{event}", None)
         if handler is None:
             return
+        if event not in CONTINUOUS_EVENTS:
+            self.smoother.flush()  # el clic o la tecla van después de todo el movimiento previo
         try:
             handler(message.get("payload") or {})
         except (TypeError, ValueError, KeyError):
@@ -264,7 +430,7 @@ class Link:
     def do_move(self, d: dict) -> None:
         x = max(-MAX_MOVE, min(MAX_MOVE, int(d["x"])))
         y = max(-MAX_MOVE, min(MAX_MOVE, int(d["y"])))
-        self.mouse.move(x, y)
+        self.smoother.add(x, y)
 
     def do_scroll(self, d: dict) -> None:
         # Desplazamiento natural: el contenido sigue al dedo.
@@ -290,6 +456,7 @@ class Link:
 
     def release_drag(self) -> None:
         if self.dragging:
+            self.smoother.flush()
             self.dragging = False
             self.mouse.release(Button.left)
 
@@ -323,7 +490,20 @@ class Window:
         self.expires: datetime | None = None
 
         serif = ("Georgia", 54, "italic")
-        tk.Label(self.root, text="Vincle", font=serif, bg=PAPER, fg=INK).pack(anchor="w")
+        self.title = tk.Label(self.root, text="Vincle", font=serif, bg=PAPER, fg=INK)
+        self.title.pack(anchor="w")
+
+        # Aviso de versión nueva (oculto hasta que la haya).
+        self.update_asset: dict | None = None
+        self.update_bar = tk.Frame(self.root, bg=INK, padx=12, pady=8)
+        self.update_text = tk.Label(self.update_bar, text="", font=("Segoe UI", 10), bg=INK, fg="white",
+                                    justify="left", wraplength=190)
+        self.update_text.pack(side="left")
+        self.update_btn = tk.Button(
+            self.update_bar, text="Actualizar", command=self.start_update, font=("Segoe UI", 10),
+            bg=PAPER, fg=INK, activebackground="white", relief="flat", padx=12, pady=4, cursor="hand2",
+        )
+        self.update_btn.pack(side="right")
 
         # Vista "esperando": QR + PIN.
         self.waiting = tk.Frame(self.root, bg=PAPER)
@@ -349,6 +529,8 @@ class Window:
 
         self.status = tk.Label(self.root, text="Conectando con el servidor…", font=("Segoe UI", 10),
                                bg=PAPER, fg=MUTED, justify="left", wraplength=300)
+        tk.Label(self.root, text=f"Versión {VERSION}", font=("Segoe UI", 8), bg=PAPER, fg=MUTED).pack(
+            anchor="w", side="bottom", pady=(6, 0))
         self.status.pack(anchor="w", side="bottom", pady=(18, 0))
         self.retry = tk.Button(self.root, text="Reintentar", command=self.reconnect, relief="flat",
                                bg=PAPER, fg=INK, font=("Segoe UI", 10, "underline"), cursor="hand2")
@@ -414,6 +596,25 @@ class Window:
     def on_status(self, text: str) -> None:
         self.status.config(text=text)
 
+    def on_update(self, asset: dict) -> None:
+        self.update_asset = asset
+        self.update_text.config(text=f"Hay una versión nueva ({asset['tag']}).")
+        self.update_btn.config(state="normal", text="Actualizar")
+        self.update_bar.pack(fill="x", pady=(14, 0), after=self.title)
+
+    def start_update(self) -> None:
+        self.update_btn.config(state="disabled")
+        self.update_text.config(text="Descargando la versión nueva…")
+        self.link.call(self.link.update(self.update_asset))
+
+    def on_update_failed(self, detail: str) -> None:
+        self.update_text.config(text="No se pudo actualizar. También puedes descargarla desde la página de Vincle.")
+        self.update_btn.config(state="normal", text="Reintentar")
+
+    def on_restart(self) -> None:
+        # La versión nueva ya se abrió; esta se cierra (y cierra su sala).
+        self.quit()
+
     def on_error(self, text: str) -> None:
         self.status.config(text=text)
         self.retry.pack(anchor="w", side="bottom")
@@ -446,6 +647,7 @@ def main() -> None:
             ctypes.windll.shcore.SetProcessDpiAwareness(2)
         except (AttributeError, OSError):
             pass
+    remove_old_exe()
     Window().run()
 
 
