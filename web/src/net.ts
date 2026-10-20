@@ -8,8 +8,9 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 export type Room = { id: string; name: string }
 
-/** waiting: unido, la PC aún no aprueba. host-away: aprobado, pero la PC no está en línea. */
-export type LinkState = 'joining' | 'waiting' | 'connected' | 'host-away' | 'rejected' | 'lost'
+/** waiting: unido, la PC aún no aprueba. host-away: aprobado, pero la PC no está en línea.
+ *  connected: por Supabase. direct: por la conexión directa con la PC. */
+export type LinkState = 'joining' | 'waiting' | 'connected' | 'direct' | 'host-away' | 'rejected' | 'lost'
 
 /** Eventos que el celular envía a la PC (ver README, "Protocolo"). */
 export type Outgoing =
@@ -69,6 +70,84 @@ let accepted = false
 // la PC los vuelve a poner en orden.
 let seq = 0
 
+// ---------- Conexión directa (WebRTC) ----------
+// Por Supabase cada movimiento tarda ~100 ms (va a São Paulo y vuelve). Una vez aceptada la
+// conexión, el celular propone hablar directo con la PC: en la misma red Wi-Fi tarda unos pocos
+// ms. Si la red no lo permite, o la PC tiene una versión sin soporte, se sigue por Supabase.
+
+// Servidor STUN público y gratuito: solo le dice a cada lado su dirección vista desde internet.
+const STUN_URL = 'stun:stun.l.google.com:19302'
+const DIRECT_TIMEOUT_MS = 8000
+const DIRECT_RETRY_MS = 5000
+const DIRECT_MAX_FAILURES = 3
+
+let peer: RTCPeerConnection | null = null
+let fast: RTCDataChannel | null = null // movimientos: sin orden ni reenvíos, el más rápido
+let sure: RTCDataChannel | null = null // clics y teclas: en orden y sin pérdidas
+let directFailures = 0
+let retryTimer = 0
+
+export function isDirect() {
+  return fast?.readyState === 'open' && sure?.readyState === 'open'
+}
+
+function iceGathered(pc: RTCPeerConnection, maxMs: number) {
+  return new Promise<void>((resolve) => {
+    if (pc.iceGatheringState === 'complete') return resolve()
+    const timer = setTimeout(resolve, maxMs)
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') {
+        clearTimeout(timer)
+        resolve()
+      }
+    })
+  })
+}
+
+async function startDirect(ch: RealtimeChannel, report: () => void) {
+  closeDirect()
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_URL }] })
+  peer = pc
+  const f = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 })
+  const s = pc.createDataChannel('sure')
+
+  const down = () => {
+    if (peer !== pc) return
+    closeDirect()
+    report()
+    if (++directFailures < DIRECT_MAX_FAILURES && ch === channel && accepted) {
+      retryTimer = window.setTimeout(() => void startDirect(ch, report), DIRECT_RETRY_MS)
+    }
+  }
+  const timeout = setTimeout(down, DIRECT_TIMEOUT_MS)
+  const opened = () => {
+    if (peer !== pc || f.readyState !== 'open' || s.readyState !== 'open') return
+    clearTimeout(timeout)
+    directFailures = 0
+    fast = f
+    sure = s
+    report()
+  }
+  f.onopen = s.onopen = opened
+  f.onclose = s.onclose = down
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') down()
+  }
+
+  // La oferta se manda con todos los candidatos ya reunidos (la PC no los recibe de a uno).
+  await pc.setLocalDescription(await pc.createOffer())
+  await iceGathered(pc, 2000)
+  if (peer !== pc || ch !== channel) return
+  void ch.send({ type: 'broadcast', event: 'rtc-offer', payload: { sdp: pc.localDescription!.sdp } })
+}
+
+function closeDirect() {
+  clearTimeout(retryTimer)
+  const pc = peer
+  peer = fast = sure = null
+  pc?.close()
+}
+
 export function join(room: Room, onState: (s: LinkState) => void) {
   leave()
   const ch = supabase.channel(`room:${room.id}`, {
@@ -78,7 +157,8 @@ export function join(room: Room, onState: (s: LinkState) => void) {
   accepted = false
   seq = 0
   let hostHere = false
-  const report = () => onState(!accepted ? 'waiting' : hostHere ? 'connected' : 'host-away')
+  const report = () =>
+    onState(!accepted ? 'waiting' : !hostHere ? 'host-away' : isDirect() ? 'direct' : 'connected')
 
   ch.on('broadcast', { event: 'status' }, ({ payload }) => {
     // rejected: quien está en la PC no dio permiso. closed: la PC cerró la sala.
@@ -87,8 +167,19 @@ export function join(room: Room, onState: (s: LinkState) => void) {
       onState(payload.state === 'rejected' ? 'rejected' : 'lost')
       return
     }
+    const wasAccepted = accepted
     accepted = payload?.state === 'accepted'
+    if (accepted && !wasAccepted) {
+      directFailures = 0
+      void startDirect(ch, report)
+    }
     report()
+  })
+  ch.on('broadcast', { event: 'rtc-answer' }, ({ payload }) => {
+    const pc = peer
+    if (pc?.signalingState === 'have-local-offer' && typeof payload?.sdp === 'string') {
+      pc.setRemoteDescription({ type: 'answer', sdp: payload.sdp }).catch(() => pc.close())
+    }
   })
   ch.on('presence', { event: 'sync' }, () => {
     hostHere = 'host' in ch.presenceState()
@@ -126,10 +217,16 @@ export function send(msg: Outgoing) {
   }
   // Sin permiso de la PC no se envía nada: la PC lo descartaría y gastaría cuota.
   if (!accepted) return
+  if (isDirect()) {
+    const dc = msg.event === 'move' || msg.event === 'scroll' ? fast! : sure!
+    dc.send(JSON.stringify(msg))
+    return
+  }
   void channel.send({ type: 'broadcast', event: msg.event, payload: { ...msg.payload, n: ++seq } })
 }
 
 function leave() {
+  closeDirect()
   if (channel) void supabase.removeChannel(channel)
   channel = null
   live = false

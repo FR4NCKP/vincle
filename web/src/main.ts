@@ -6,8 +6,10 @@ import { startScanner } from './scanner'
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 
-const screens = { desktop: $('desktop'), connect: $('connect'), pad: $('pad'), keys: $('keys') }
+const screens = { desktop: $('desktop'), connect: $('connect'), pad: $('pad') }
 type ScreenName = keyof typeof screens
+
+const typingInput = $<HTMLInputElement>('texto')
 
 let room: Room | null = null
 let stopScan: (() => void) | null = null
@@ -15,6 +17,7 @@ let stopScan: (() => void) | null = null
 function show(name: ScreenName) {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name
   if (name !== 'connect') stopScanner()
+  if (name !== 'pad') typingInput.blur()
 }
 
 // ---------- Alto visible: el teclado del sistema no debe tapar la barra de teclas ----------
@@ -42,15 +45,15 @@ function setStatus(state: LinkState) {
     return
   }
   const name = room?.name ?? 'la computadora'
+  const text =
+    state === 'direct' ? 'Conectado · directo'
+    : state === 'connected' ? 'Conectado'
+    : state === 'waiting' ? `Acepta en ${name}`
+    : state === 'host-away' ? `${name} no está en línea`
+    : 'Conectando…'
   for (const el of statusEls) {
-    const onKeys = screens.keys.contains(el)
-    const text =
-      state === 'connected' ? (onKeys ? `Enviando a ${name}` : 'Conectado')
-      : state === 'waiting' ? `Acepta en ${name}`
-      : state === 'host-away' ? `${name} no está en línea`
-      : 'Conectando…'
     el.querySelector('[data-status-text]')!.textContent = text
-    el.classList.toggle('ok', state === 'connected')
+    el.classList.toggle('ok', state === 'connected' || state === 'direct')
   }
 }
 
@@ -161,7 +164,7 @@ viewfinder.addEventListener('click', async () => {
   }
 })
 
-// ---------- 02 Trackpad y 03 Teclado ----------
+// ---------- 02 Trackpad y teclado ----------
 
 setupPad($('surface'), $('ring'))
 $('ring').classList.add('idle')
@@ -169,23 +172,18 @@ $('ring').classList.add('idle')
 $('click-left').addEventListener('click', () => send({ event: 'click', payload: { button: 'left' } }))
 $('click-right').addEventListener('click', () => send({ event: 'click', payload: { button: 'right' } }))
 
-const textarea = $<HTMLTextAreaElement>('texto')
+const toggleKeys = $<HTMLButtonElement>('toggle-keys')
 setupKeys({
-  textarea,
+  input: typingInput,
   keybar: $('keybar'),
   ctrl: $<HTMLButtonElement>('ctrl'),
-  sendBtn: $<HTMLButtonElement>('send'),
-  sentBlock: $('sent-block'),
-  sentText: $('sent-text'),
-})
-
-$('open-keys').addEventListener('click', () => {
-  show('keys')
-  textarea.focus() // dentro del mismo toque, para que el sistema abra su teclado
-})
-$('close-keys').addEventListener('click', () => {
-  textarea.blur()
-  show('pad')
+  toggle: toggleKeys,
+  onTyping: (typing) => {
+    // Mientras se escribe, la fila de teclas especiales reemplaza a los botones de clic
+    // (tocar el trackpad sigue haciendo clic) para dejarle espacio al trackpad.
+    screens.pad.classList.toggle('typing-on', typing)
+    toggleKeys.setAttribute('aria-pressed', String(typing))
+  },
 })
 
 // ---------- Ajustes ----------
@@ -214,14 +212,25 @@ $('disconnect').addEventListener('click', () => {
 
 // ---------- Arranque ----------
 
-const pinInUrl = /^#(\d{6})$/.exec(location.hash)?.[1]
-if (pinInUrl) {
+function connectFromUrl(): boolean {
+  const pin = /^#(\d{6})$/.exec(location.hash)?.[1]
+  if (!pin) return false
   // El PIN es de un solo uso: se quita de la barra de direcciones y del historial.
   history.replaceState(null, '', location.pathname + location.search)
-  show('connect')
-  fillPin(pinInUrl)
-  void connect(pinInUrl)
-} else {
+  // Con una sesión abierta (por ejemplo, escaneando de nuevo el mismo QR) solo se cambia de
+  // sala si el código nuevo funciona; si no, se sigue en el trackpad.
+  if (!room) {
+    show('connect')
+    fillPin(pin)
+  }
+  void connect(pin)
+  return true
+}
+
+// Si la app ya estaba abierta en esa pestaña, escanear el QR solo cambia el "#PIN" sin recargar.
+window.addEventListener('hashchange', connectFromUrl)
+
+if (!connectFromUrl()) {
   const saved = savedRoom()
   if (saved) enterRoom(saved)
   // Con mouse y sin pantalla táctil es casi seguro una computadora: lo útil ahí es descargar el programa.

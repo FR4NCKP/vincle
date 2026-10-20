@@ -1,14 +1,15 @@
 # Vincle
 
-Vincle convierte el celular en trackpad y teclado de la computadora. La conexión pasa por internet (Supabase Realtime), así que el celular y la PC no tienen que estar en la misma red.
+Vincle convierte el celular en trackpad y teclado de la computadora. El emparejamiento pasa por internet (Supabase Realtime), así que el celular y la PC no tienen que estar en la misma red. Una vez aceptada la conexión, intentan hablar directo por WebRTC; si la red no lo permite, siguen por Supabase.
 
 ```
 Celular (PWA)  ──Broadcast──▶  Supabase Realtime  ──Broadcast──▶  PC (Python)
 web/                           canal privado room:<id>            desktop/vincle.py
+      └───────────────── WebRTC directo (si se puede) ─────────────────┘
 ```
 
 - `web/`: app del celular. Vite + TypeScript sin framework, publicada en GitHub Pages.
-- `desktop/`: programa de la PC. Python con `pynput` (mouse y teclado), `tkinter` (ventana) y `segno` (QR).
+- `desktop/`: programa de la PC. Python con `pynput` (mouse y teclado), `tkinter` (ventana), `segno` (QR) y `aiortc` (WebRTC).
 - `supabase/migrations/`: tablas, funciones y políticas de la base de datos.
 
 ## Cómo se usa
@@ -23,12 +24,14 @@ En el celular no se instala nada: Vincle se abre en el navegador desde https://f
    - tocar es clic, tocar con dos dedos es clic derecho
    - mantener pulsado medio segundo y mover arrastra
    - dos dedos desplazan
-5. Teclado (ícono de teclado arriba a la derecha):
-   - lo que escribes se manda completo con **Enviar** o con la tecla intro del celular; con el campo vacío, Enviar funciona como Enter
-   - `esc`, `tab` y las flechas se mandan al instante
+5. Teclado, en la misma pantalla que el trackpad:
+   - tocas «Toca aquí para escribir» (o el ícono de teclado de arriba) y se abre el teclado del celular; el trackpad sigue visible y se puede usar mientras escribes
+   - cada letra llega a la PC al momento, igual que en un teclado real; borrar, el autocorrector y las sugerencias también se reflejan
+   - mientras escribes aparece una fila con `esc`, `tab`, `ctrl`, las flechas, borrar y Enter
    - `ctrl` queda activo para la siguiente tecla: tocas `ctrl` y luego la `c` y se manda ctrl + c
-   - borrar con el campo vacío borra en la PC
-6. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
+   - para dejar de escribir, bajas el teclado del celular o tocas otra vez el ícono de teclado
+6. Arriba se ve «Conectado · directo» cuando el celular habla directo con la PC, o solo «Conectado» si va por Supabase.
+7. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
 
 ## Configuración de Supabase
 
@@ -54,7 +57,7 @@ Las dos funciones son `SECURITY DEFINER` a propósito: son la única forma de cr
 
 ## Protocolo
 
-Todo viaja como Broadcast en el canal privado `room:<id>`.
+El emparejamiento y el permiso viajan como Broadcast en el canal privado `room:<id>`. Las órdenes también, hasta que se abre la conexión directa (ver más abajo).
 
 Del celular a la PC:
 
@@ -70,7 +73,20 @@ Del celular a la PC:
 
 Todos los eventos menos `hello` llevan además un número `n` que empieza en 1 con cada `hello`. Realtime puede entregar desordenados dos mensajes enviados casi juntos, así que la PC ejecuta clics, arrastres y teclas según ese número. Si falta uno, espera hasta 150 ms y, si no llega, sigue sin él (Broadcast no reintenta). `move` y `scroll` se aplican apenas llegan, porque sumar desplazamientos da lo mismo en cualquier orden; así el cursor nunca se frena esperando otro mensaje. Antes de un clic o una tecla, la PC termina de aplicar el movimiento pendiente. El celular no envía órdenes hasta recibir `accepted`.
 
-La PC no mueve el cursor de golpe con cada `move`: lo reparte en pasos de 4 ms durante los 33 ms que tarda en llegar el siguiente, para que se vea fluido. La latencia de punta a punta, medida pasando por Supabase en São Paulo, es de unos 100 ms.
+La PC no mueve el cursor de golpe con cada `move`: lo reparte en pasos de 4 ms a lo largo del intervalo con que suelen llegar (lo mide sobre la marcha), para que se vea fluido.
+
+### Conexión directa (WebRTC)
+
+Por Supabase cada movimiento tarda unos 100 ms, porque va a São Paulo y vuelve. Por eso, en cuanto recibe `accepted`, el celular propone una conexión directa:
+
+1. Crea dos canales de datos: `fast` (sin orden ni reenvíos, para `move` y `scroll`) y `sure` (en orden y sin pérdidas, para todo lo demás).
+2. Junta sus candidatos de red, con ayuda del STUN público y gratuito de Google, y manda la oferta completa como `rtc-offer` `{sdp}` por el canal privado.
+3. La PC (`aiortc`) responde con `rtc-answer` `{sdp}`. Solo atiende ofertas después de haber dado permiso.
+4. Cuando los dos canales abren, el celular manda las órdenes por ahí como JSON `{event, payload}`, sin el número `n` (el canal `sure` ya garantiza el orden), y envía el movimiento cada 8 ms en lugar de cada 33 ms.
+
+Si en 8 segundos no se abre, o la conexión se cae, el celular vuelve a Supabase sin cortar nada y lo reintenta hasta 3 veces. No hay servidor TURN (que tiene costo), así que en redes que bloquean las conexiones directas se queda en Supabase. Una PC con una versión anterior a la 0.3.0 ignora `rtc-offer` y todo sigue por Supabase.
+
+Medido en la misma computadora: de 100 ms por Supabase a unos 6 ms por la conexión directa. Por Wi-Fi se suman algunos milisegundos.
 
 De la PC al celular: `status` con `{state: "pending" | "accepted" | "rejected" | "closed"}`.
 

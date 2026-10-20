@@ -1,8 +1,10 @@
-import { send } from './net'
+import { isDirect, send } from './net'
 
 // Supabase Free corta la conexión pasados 100 mensajes/s por proyecto, y cada Broadcast
-// cuenta como enviado + recibido: ~30 envíos/s deja margen y sigue viéndose fluido.
+// cuenta como enviado + recibido: ~30 envíos/s deja margen. Por la conexión directa no hay
+// cuota, y se manda casi cada evento del dedo (~120/s) para el menor retraso posible.
 const SEND_INTERVAL_MS = 33
+const DIRECT_SEND_INTERVAL_MS = 8
 const TAP_MAX_MS = 250
 const TAP_SLOP_PX = 8
 const HOLD_TO_DRAG_MS = 400
@@ -56,7 +58,8 @@ export function setupPad(surface: HTMLElement, ring: HTMLElement) {
 
   function schedule() {
     if (flushTimer) return
-    flushTimer = window.setTimeout(flush, Math.max(0, lastSend + SEND_INTERVAL_MS - performance.now()))
+    const interval = isDirect() ? DIRECT_SEND_INTERVAL_MS : SEND_INTERVAL_MS
+    flushTimer = window.setTimeout(flush, Math.max(0, lastSend + interval - performance.now()))
   }
 
   function placeRing(x: number, y: number) {
@@ -76,6 +79,7 @@ export function setupPad(surface: HTMLElement, ring: HTMLElement) {
   }
 
   surface.addEventListener('pointerdown', (e) => {
+    e.preventDefault() // tocar el trackpad no le quita el foco al campo de escritura
     surface.setPointerCapture(e.pointerId)
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY })
     if (pointers.size === 1) {

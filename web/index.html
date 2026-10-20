@@ -104,7 +104,7 @@
     <span class="wordmark-small">Vincle</span>
     <div class="bar-right">
       <div class="status" data-status><span class="dot" aria-hidden="true"></span><span data-status-text>Conectando…</span></div>
-      <button class="icon-btn" id="open-keys" aria-label="Abrir teclado">
+      <button class="icon-btn" id="toggle-keys" aria-label="Teclado" aria-pressed="false">
         <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="1"/><path d="M7 10h.5M11 10h.5M15 10h.5M8 14h8"/></svg>
       </button>
       <button class="icon-btn" data-open-settings aria-label="Ajustes">
@@ -121,44 +121,26 @@
     <p class="surface-hint">Un dedo mueve el cursor<br>Dos dedos desplazan<br>Mantén pulsado para arrastrar</p>
   </div>
 
+  <div class="typing">
+    <div class="keybar" id="keybar">
+      <button data-key="esc">esc</button>
+      <button data-key="tab">tab</button>
+      <button id="ctrl" aria-pressed="false">ctrl</button>
+      <button data-key="left" aria-label="Flecha izquierda"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+      <button data-key="right" aria-label="Flecha derecha"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      <button data-key="backspace" aria-label="Borrar"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path d="M9 5h11v14H9l-6-7z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/></svg></button>
+      <button data-key="enter" class="send" aria-label="Enter"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M19 5v7a2 2 0 0 1-2 2H6M10 10l-4 4 4 4"/></svg></button>
+    </div>
+    <input id="texto" class="type-field" type="text" placeholder="Toca aquí para escribir" aria-label="Escribir en la computadora"
+      autocomplete="off" autocapitalize="sentences" spellcheck="false" enterkeyhint="enter">
+  </div>
+
   <div class="pad-buttons">
     <button class="primary-flat" id="click-left">Clic</button>
     <button class="outline" id="click-right">Clic derecho</button>
   </div>
 </section>
 
-<!-- 03 Teclado -->
-<section class="screen" id="keys" hidden>
-  <svg class="blob blob-keys" aria-hidden="true" viewBox="0 0 200 200"><path d="M163.1,25.7C186.4,44.8,191.6,84.2,183.4,116.9C175.2,149.6,153.6,175.6,124.3,189.8C95,204,72,190,50,176C28,162,-3,152,1.4,112C5.8,72,30,70,46,44C62,18,81.2,3,110,4C138.8,5,139.8,6.6,163.1,25.7Z"/></svg>
-
-  <header class="bar bar-keys">
-    <button class="icon-btn" id="close-keys" aria-label="Cerrar teclado">
-      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
-    <div class="status" data-status><span class="dot" aria-hidden="true"></span><span data-status-text>Conectando…</span></div>
-  </header>
-
-  <div class="keys-body">
-    <div class="sent" id="sent-block" hidden>
-      <span class="eyebrow muted">Enviado</span>
-      <p id="sent-text"></p>
-    </div>
-    <div class="writing">
-      <label for="texto" class="eyebrow">Escribiendo</label>
-      <textarea id="texto" rows="4" spellcheck="false" autocapitalize="sentences" placeholder="Escribe aquí"></textarea>
-    </div>
-    <div class="dots dots-keys" aria-hidden="true"></div>
-  </div>
-
-  <div class="keybar" id="keybar">
-    <button data-key="esc">esc</button>
-    <button data-key="tab">tab</button>
-    <button id="ctrl" aria-pressed="false">ctrl</button>
-    <button data-key="left" aria-label="Flecha izquierda"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
-    <button data-key="right" aria-label="Flecha derecha"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-    <button class="send" id="send"><span>Enviar</span><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24"><path d="M19 5v7a2 2 0 0 1-2 2H6M10 10l-4 4 4 4"/></svg></button>
-  </div>
-</section>
 
 <dialog id="settings" aria-labelledby="settings-title">
   <form method="dialog">

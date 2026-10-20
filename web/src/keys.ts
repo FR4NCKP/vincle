@@ -1,14 +1,24 @@
 import { send } from './net'
 
+// El campo solo muestra lo último escrito; cuando crece mucho se recorta (fuera de una
+// composición del teclado, para no romper la palabra que se está escribiendo).
+const MAX_FIELD = 48
+const KEEP_AFTER_TRIM = 16
+
+/**
+ * Escritura en vivo: cada cambio del campo se compara con el anterior y a la PC se le manda
+ * la diferencia (borrados + texto nuevo). Así funcionan igual las letras sueltas, el
+ * autocorrector, las sugerencias y el pegado, que cambian varias letras de una vez.
+ */
 export function setupKeys(els: {
-  textarea: HTMLTextAreaElement
+  input: HTMLInputElement
   keybar: HTMLElement
   ctrl: HTMLButtonElement
-  sendBtn: HTMLButtonElement
-  sentBlock: HTMLElement
-  sentText: HTMLElement
+  toggle: HTMLButtonElement
+  onTyping: (typing: boolean) => void
 }) {
-  const { textarea, keybar, ctrl, sendBtn, sentBlock, sentText } = els
+  const { input, keybar, ctrl, toggle, onTyping } = els
+  let last = ''
   let ctrlOn = false
 
   function setCtrl(on: boolean) {
@@ -21,49 +31,73 @@ export function setupKeys(els: {
     setCtrl(false)
   }
 
-  // Envía lo escrito tal cual; con el campo vacío, Enviar funciona como Enter.
-  function submit() {
-    const text = textarea.value
-    if (!text) {
-      key('enter')
+  input.addEventListener('input', (e) => {
+    const now = input.value
+    // Con ctrl activo, la siguiente letra es un atajo (ctrl + c, ctrl + z...) y no se escribe.
+    if (ctrlOn && now.length === last.length + 1 && now.startsWith(last)) {
+      input.value = last
+      key(now.slice(-1).toLowerCase())
       return
     }
-    send({ event: 'text', payload: { text } })
-    sentText.textContent = text
-    sentBlock.hidden = false
-    textarea.value = ''
-  }
+    let same = 0
+    while (same < last.length && same < now.length && last[same] === now[same]) same++
+    for (let i = same; i < last.length; i++) key('backspace')
+    const added = now.slice(same)
+    if (added) send({ event: 'text', payload: { text: added } })
+    last = now
+    if (now.length > MAX_FIELD && !(e as InputEvent).isComposing) {
+      input.value = last = now.slice(-KEEP_AFTER_TRIM)
+    }
+  })
 
-  // Los botones no deben quitarle el foco al textarea: si lo pierde, se cierra el teclado.
-  keybar.addEventListener('pointerdown', (e) => e.preventDefault())
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      key('enter')
+      input.value = last = ''
+    } else if (e.key === 'Backspace' && !input.value) {
+      // Con el campo vacío el navegador no avisa del borrado: se manda igual a la PC.
+      key('backspace')
+    }
+  })
+
+  // Estos botones no deben quitarle el foco al campo: si lo pierde, se cierra el teclado.
+  for (const el of [keybar, toggle]) el.addEventListener('pointerdown', (e) => e.preventDefault())
 
   keybar.addEventListener('click', (e) => {
     const btn = (e.target as Element).closest<HTMLButtonElement>('button')
     if (!btn) return
     if (btn === ctrl) setCtrl(!ctrlOn)
-    else if (btn === sendBtn) submit()
-    else if (btn.dataset.key) key(btn.dataset.key)
-  })
-
-  textarea.addEventListener('beforeinput', (e) => {
-    // La tecla "intro" del teclado del celular equivale a Enviar.
-    if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
-      e.preventDefault()
-      submit()
+    else if (btn.dataset.key) {
+      key(btn.dataset.key)
+      if (btn.dataset.key === 'enter') input.value = last = ''
     }
   })
 
-  textarea.addEventListener('input', (e) => {
-    // Con ctrl activo, la siguiente letra se manda como atajo (ctrl + c, ctrl + z...).
-    const data = (e as InputEvent).data
-    if (ctrlOn && data && data.length === 1) {
-      textarea.value = textarea.value.slice(0, -1)
-      key(data.toLowerCase())
-    }
+  toggle.addEventListener('click', () => {
+    if (document.activeElement === input) input.blur()
+    else input.focus() // dentro del mismo toque, para que el sistema abra su teclado
   })
 
-  textarea.addEventListener('keydown', (e) => {
-    // Borrar con el campo vacío borra en la computadora.
-    if (e.key === 'Backspace' && !textarea.value) key('backspace')
+  input.addEventListener('focus', () => onTyping(true))
+  input.addEventListener('blur', () => {
+    setCtrl(false)
+    onTyping(false)
   })
+
+  // En Android, bajar el teclado con "atrás" no quita el foco del campo. Se detecta porque
+  // el alto visible vuelve a ser el de la pantalla completa, y entonces se suelta el foco.
+  const vv = window.visualViewport
+  if (vv) {
+    let fullHeight = vv.height
+    let keyboardShown = false
+    vv.addEventListener('resize', () => {
+      fullHeight = Math.max(fullHeight, vv.height)
+      if (vv.height < fullHeight * 0.8) keyboardShown = true
+      else if (keyboardShown) {
+        keyboardShown = false
+        if (document.activeElement === input) input.blur()
+      }
+    })
+  }
 }

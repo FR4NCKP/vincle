@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import messagebox
 
+from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 import httpx
 import segno
 from pynput.keyboard import Controller as Keyboard, Key, KeyCode
@@ -30,7 +31,7 @@ from supabase import AsyncClientOptions, acreate_client
 from supabase_auth import AsyncSupportedStorage
 
 # Debe coincidir con la etiqueta de la versión en GitHub (v0.2.0); el workflow lo verifica.
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 RELEASES_API = "https://api.github.com/repos/FR4NCKP/vincle/releases/latest"
 EXE_NAME = "Vincle.exe"
 
@@ -50,6 +51,9 @@ SCROLL_PX_PER_NOTCH = 40
 MAX_MOVE = 2000
 MAX_TEXT = 2000
 GAP_WAIT_S = 0.15
+# Servidor STUN público y gratuito: solo le dice a cada lado su dirección vista desde internet.
+STUN_URL = "stun:stun.l.google.com:19302"
+MAX_SDP = 20_000
 CONTINUOUS_EVENTS = ("move", "scroll")
 SPECIAL_KEYS = {
     "esc": Key.esc,
@@ -152,13 +156,13 @@ def remove_old_exe() -> None:
 class Smoother:
     """Mueve el cursor en pasos pequeños en vez de a saltos.
 
-    El celular manda el movimiento acumulado cada ~33 ms; aplicarlo de golpe se ve
-    entrecortado. Aquí cada movimiento se reparte en pasos de 4 ms a lo largo del tiempo que
-    falta para que llegue el siguiente, así el cursor avanza a velocidad pareja (a cambio
-    de, como mucho, un intervalo de retraso)."""
+    El celular manda el movimiento acumulado cada ~33 ms por Supabase, o cada ~8 ms por la
+    conexión directa; aplicarlo de golpe se ve entrecortado. Aquí cada movimiento se reparte
+    en pasos de 4 ms a lo largo del tiempo que suele tardar en llegar el siguiente, así el
+    cursor avanza a velocidad pareja con, como mucho, un intervalo de retraso."""
 
     TICK_S = 0.004
-    SPREAD_S = 0.033  # igual al intervalo de envío del celular
+    MAX_SPREAD_S = 0.04
 
     def __init__(self, mouse: Mouse) -> None:
         self.mouse = mouse
@@ -167,13 +171,20 @@ class Smoother:
         self.left = [0.0, 0.0]  # movimiento que falta aplicar
         self.time_left = 0.0  # en cuánto tiempo hay que terminar de aplicarlo
         self.carry = [0.0, 0.0]  # fracciones de píxel que aún no suman uno
+        self.spread = 0.033  # intervalo típico entre movimientos, medido sobre la marcha
+        self.last_add = 0.0
         threading.Thread(target=self.run, daemon=True).start()
 
     def add(self, x: float, y: float) -> None:
+        now = time.perf_counter()
         with self.lock:
+            gap = now - self.last_add
+            self.last_add = now
+            if gap < 0.1:  # una pausa del dedo no cuenta como intervalo
+                self.spread = 0.7 * self.spread + 0.3 * gap
             self.left[0] += x
             self.left[1] += y
-            self.time_left = self.SPREAD_S
+            self.time_left = min(max(self.spread, self.TICK_S), self.MAX_SPREAD_S)
         self.wake.set()
 
     def flush(self) -> None:
@@ -232,6 +243,7 @@ class Link:
         self.next_seq = 1
         self.pending: dict[int, dict] = {}
         self.gap_handle: asyncio.TimerHandle | None = None
+        self.peer: RTCPeerConnection | None = None
 
     # ---------- Hilo y llamadas desde la ventana ----------
 
@@ -301,6 +313,7 @@ class Link:
             {"config": {"private": True, "presence": {"key": "host"}}},
         )
         ch.on_broadcast("hello", lambda _m: self.on_hello())
+        ch.on_broadcast("rtc-offer", lambda m: asyncio.ensure_future(self.on_rtc_offer(m.get("payload") or {})))
         for event in ("move", "scroll", "click", "drag", "text", "key"):
             ch.on_broadcast(event, self.on_input)
         ch.on_presence_sync(self.on_presence)
@@ -327,6 +340,7 @@ class Link:
             self.refresh_handle = None
         self.release_drag()
         self.reset_order()
+        await self.close_peer()
         if self.channel is not None:
             if self.accepted:
                 await self.channel.send_broadcast("status", {"state": "closed"})
@@ -355,6 +369,7 @@ class Link:
     def on_hello(self) -> None:
         """El celular entró (o volvió a entrar) al canal; su numeración empieza de nuevo."""
         self.reset_order()
+        asyncio.ensure_future(self.close_peer())  # el celular negociará una conexión directa nueva
         if self.accepted:
             asyncio.ensure_future(self.channel.send_broadcast("status", {"state": "accepted"}))
         elif not self.asking:
@@ -374,6 +389,52 @@ class Link:
         else:
             await self.channel.send_broadcast("status", {"state": "rejected"})
             await self.new_room()
+
+    # ---------- Conexión directa (WebRTC) ----------
+
+    async def on_rtc_offer(self, payload: dict) -> None:
+        """El celular propone hablar sin pasar por Supabase. La oferta llega por el canal
+        privado, así que solo puede venir del celular de esta sala; igual se exige el permiso."""
+        sdp = payload.get("sdp")
+        if not self.accepted or not isinstance(sdp, str) or len(sdp) > MAX_SDP:
+            return
+        await self.close_peer()
+        pc = RTCPeerConnection(RTCConfiguration([RTCIceServer(STUN_URL)]))
+        self.peer = pc
+
+        @pc.on("datachannel")
+        def on_datachannel(dc) -> None:
+            # Los canales que abre el celular llegan aquí ya abiertos.
+            if pc is self.peer:
+                self.ui.put(("direct", True))
+
+            @dc.on("message")
+            def on_message(data) -> None:
+                if pc is not self.peer or not self.accepted or not isinstance(data, str):
+                    return
+                try:
+                    message = json.loads(data)
+                except ValueError:
+                    return
+                if isinstance(message, dict):
+                    # Llega en orden ("sure") o es movimiento ("fast"): no hace falta numerar.
+                    self.run(message)
+
+        @pc.on("connectionstatechange")
+        async def on_state() -> None:
+            if pc is self.peer and pc.connectionState in ("failed", "closed"):
+                await self.close_peer()
+
+        await pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type="offer"))
+        await pc.setLocalDescription(await pc.createAnswer())  # aiortc junta antes todos sus candidatos
+        if pc is self.peer and self.channel is not None:
+            await self.channel.send_broadcast("rtc-answer", {"sdp": pc.localDescription.sdp})
+
+    async def close_peer(self) -> None:
+        pc, self.peer = self.peer, None
+        if pc is not None:
+            self.ui.put(("direct", False))
+            await pc.close()
 
     # ---------- Órdenes del celular ----------
 
@@ -488,6 +549,8 @@ class Window:
         self.ui: queue.Queue = queue.Queue()
         self.link = Link(self.ui)
         self.expires: datetime | None = None
+        self.guest_here = False
+        self.direct = False
 
         serif = ("Georgia", 54, "italic")
         self.title = tk.Label(self.root, text="Vincle", font=serif, bg=PAPER, fg=INK)
@@ -587,11 +650,25 @@ class Window:
 
     def on_connected(self, guest_here: bool) -> None:
         self.expires = None
+        self.guest_here = guest_here
         self.waiting.pack_forget()
         self.linked.pack(anchor="w")
         self.linked_text.config(text="Celular conectado" if guest_here else "El celular se\ndesconectó")
-        self.status.config(text="Lo que hagas en el celular se ejecuta aquí." if guest_here
-                           else "Se reconectará solo al volver a abrir Vincle en el celular.")
+        self.show_link_status()
+
+    def on_direct(self, on: bool) -> None:
+        self.direct = on
+        if self.linked.winfo_ismapped():
+            self.show_link_status()
+
+    def show_link_status(self) -> None:
+        if not self.guest_here:
+            text = "Se reconectará solo al volver a abrir Vincle en el celular."
+        elif self.direct:
+            text = "Conexión directa con el celular: el cursor responde al instante."
+        else:
+            text = "Conectado por internet (Supabase). Si están en la misma red Wi-Fi, se pasará solo a conexión directa."
+        self.status.config(text=text)
 
     def on_status(self, text: str) -> None:
         self.status.config(text=text)
