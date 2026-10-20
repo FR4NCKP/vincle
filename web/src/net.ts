@@ -64,6 +64,10 @@ export async function claim(pin: string): Promise<Room> {
 
 let channel: RealtimeChannel | null = null
 let live = false
+let accepted = false
+// Realtime puede entregar desordenados dos mensajes enviados casi juntos; con este número
+// la PC los vuelve a poner en orden.
+let seq = 0
 
 export function join(room: Room, onState: (s: LinkState) => void) {
   leave()
@@ -71,7 +75,8 @@ export function join(room: Room, onState: (s: LinkState) => void) {
     config: { private: true, presence: { key: 'guest' } },
   })
   channel = ch
-  let accepted = false
+  accepted = false
+  seq = 0
   let hostHere = false
   const report = () => onState(!accepted ? 'waiting' : hostHere ? 'connected' : 'host-away')
 
@@ -115,13 +120,20 @@ export function join(room: Room, onState: (s: LinkState) => void) {
 
 export function send(msg: Outgoing) {
   if (!live || !channel) return
-  void channel.send({ type: 'broadcast', event: msg.event, payload: msg.payload })
+  if (msg.event === 'hello') {
+    void channel.send({ type: 'broadcast', event: 'hello', payload: {} })
+    return
+  }
+  // Sin permiso de la PC no se envía nada: la PC lo descartaría y gastaría cuota.
+  if (!accepted) return
+  void channel.send({ type: 'broadcast', event: msg.event, payload: { ...msg.payload, n: ++seq } })
 }
 
 function leave() {
   if (channel) void supabase.removeChannel(channel)
   channel = null
   live = false
+  accepted = false
 }
 
 function forget() {

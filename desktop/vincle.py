@@ -38,6 +38,7 @@ DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "Vincle"
 SCROLL_PX_PER_NOTCH = 40
 MAX_MOVE = 2000
 MAX_TEXT = 2000
+GAP_WAIT_S = 0.15
 SPECIAL_KEYS = {
     "esc": Key.esc,
     "tab": Key.tab,
@@ -94,6 +95,11 @@ class Link:
         self.keyboard = Keyboard()
         self.dragging = False
         self.scroll_rest = [0.0, 0.0]
+        # Realtime puede entregar desordenados mensajes enviados casi juntos: se ejecutan por
+        # su número `n`, esperando un poco al que falte antes de darlo por perdido.
+        self.next_seq = 1
+        self.pending: dict[int, dict] = {}
+        self.gap_handle: asyncio.TimerHandle | None = None
 
     # ---------- Hilo y llamadas desde la ventana ----------
 
@@ -114,8 +120,12 @@ class Link:
                     SUPABASE_KEY,
                     options=AsyncClientOptions(storage=FileStorage(), realtime={"max_retries": 1_000_000}),
                 )
-            if await self.client.auth.get_session() is None:
-                await self.client.auth.sign_in_anonymously()
+            session = await self.client.auth.get_session()
+            if session is None:
+                session = (await self.client.auth.sign_in_anonymously()).session
+            # Al restaurar la sesión guardada, supabase-py no le pasa el token a Realtime y el
+            # canal privado rechaza la entrada; se le pasa a mano (las renovaciones sí llegan solas).
+            await self.client.realtime.set_auth(session.access_token)
             await self.new_room()
         except Exception as exc:  # noqa: BLE001 — cualquier fallo se muestra y se puede reintentar
             self.ui.put(("error", f"No se pudo conectar con el servidor.\n{exc}"))
@@ -159,6 +169,7 @@ class Link:
             self.refresh_handle.cancel()
             self.refresh_handle = None
         self.release_drag()
+        self.reset_order()
         if self.channel is not None:
             if self.accepted:
                 await self.channel.send_broadcast("status", {"state": "closed"})
@@ -185,7 +196,8 @@ class Link:
     # ---------- Permiso ----------
 
     def on_hello(self) -> None:
-        """El celular entró (o volvió a entrar) al canal."""
+        """El celular entró (o volvió a entrar) al canal; su numeración empieza de nuevo."""
+        self.reset_order()
         if self.accepted:
             asyncio.ensure_future(self.channel.send_broadcast("status", {"state": "accepted"}))
         elif not self.asking:
@@ -211,6 +223,34 @@ class Link:
     def on_input(self, message) -> None:
         if not self.accepted:
             return  # Nada se ejecuta sin el permiso explícito de quien está en la PC.
+        n = (message.get("payload") or {}).get("n")
+        if not isinstance(n, int) or n < self.next_seq or n > self.next_seq + 1000:
+            return  # Repetido, ya dado por perdido o fuera de rango.
+        self.pending[n] = message
+        self.drain()
+
+    def drain(self) -> None:
+        while self.next_seq in self.pending:
+            self.run(self.pending.pop(self.next_seq))
+            self.next_seq += 1
+        if self.pending and self.gap_handle is None:
+            self.gap_handle = self.loop.call_later(GAP_WAIT_S, self.skip_gap)
+
+    def skip_gap(self) -> None:
+        """El mensaje que faltaba no llegó (Broadcast no reintenta): se sigue sin él."""
+        self.gap_handle = None
+        if self.pending:
+            self.next_seq = min(self.pending)
+            self.drain()
+
+    def reset_order(self) -> None:
+        if self.gap_handle:
+            self.gap_handle.cancel()
+            self.gap_handle = None
+        self.pending.clear()
+        self.next_seq = 1
+
+    def run(self, message) -> None:
         handler = getattr(self, f"do_{message.get('event')}", None)
         if handler is None:
             return
