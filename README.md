@@ -66,6 +66,8 @@ Del celular a la PC:
 | `text` | `{text}` | Escribe el texto (admite tildes y ñ). |
 | `key` | `{key, ctrl}` | `esc`, `tab`, `left`, `right`, `enter`, `backspace` o un solo carácter. |
 
+Todos los eventos menos `hello` llevan además un número `n` que empieza en 1 con cada `hello`. Realtime puede entregar desordenados dos mensajes enviados casi juntos, así que la PC los ejecuta según ese número. Si falta uno, espera hasta 150 ms y, si no llega, sigue sin él (Broadcast no reintenta). El celular no envía órdenes hasta recibir `accepted`.
+
 De la PC al celular: `status` con `{state: "pending" | "accepted" | "rejected" | "closed"}`.
 
 Presence: la PC se registra con la clave `host` y el celular con `guest`. Con eso cada uno sabe si el otro está en línea.
