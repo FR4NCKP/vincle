@@ -33,6 +33,8 @@ APP_URL = os.environ.get("VINCLE_APP_URL", "https://fr4nckp.github.io/vincle/")
 
 HOST_NAME = socket.gethostname()[:64] or "PC"
 DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "Vincle"
+# Dentro del .exe de PyInstaller los archivos incluidos se descomprimen en _MEIPASS.
+BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 
 # Un "clic" de rueda (120 unidades en Windows) equivale a unos 40 px de dedo.
 SCROLL_PX_PER_NOTCH = 40
@@ -310,6 +312,10 @@ class Window:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title("Vincle")
+        try:
+            self.root.iconbitmap(default=str(BUNDLE_DIR / "icon.ico"))
+        except tk.TclError:
+            pass  # Sin ícono se ve el de Tk; no impide usar la app.
         self.root.configure(bg=PAPER, padx=36, pady=28)
         self.root.resizable(False, False)
         self.ui: queue.Queue = queue.Queue()

@@ -13,6 +13,8 @@ web/                           canal privado room:<id>            desktop/vincle
 
 ## Cómo se usa
 
+En el celular no se instala nada: Vincle se abre en el navegador desde https://fr4nckp.github.io/vincle/. En la PC hace falta un programa propio, porque ningún navegador deja que una página web mueva el mouse o escriba en otros programas. Ese programa es un solo archivo, `Vincle.exe`, que se descarga desde la misma página (al abrirla en una computadora) o desde [Releases](https://github.com/FR4NCKP/vincle/releases/latest). Se abre con doble clic y no se instala. Como no tiene firma digital, la primera vez Windows muestra «Windows protegió su PC»: hay que tocar «Más información» y luego «Ejecutar de todas formas».
+
 1. En la PC abres Vincle. La ventana muestra un QR y un código de 6 dígitos que vence a los 2 minutos (luego aparece otro).
 2. En el celular escaneas el QR con la cámara (abre la app con el código puesto) o abres la app y escribes el código.
 3. La PC pregunta si permites la conexión. Mientras no aceptes, no se ejecuta nada de lo que llegue del celular.
@@ -105,12 +107,17 @@ python -m venv .venv
 .venv\Scripts\python vincle.py
 ```
 
-Para generar un `.exe` que no necesite Python instalado:
+Para publicar una versión nueva del `.exe`, sube una etiqueta `v*`. El workflow `.github/workflows/release.yml` lo compila en Windows con PyInstaller y lo adjunta a la versión en Releases:
 
 ```bash
-.venv\Scripts\python -m pip install pyinstaller
-.venv\Scripts\pyinstaller --onefile --windowed --name Vincle vincle.py
+git tag v0.2.0
 ```
+
+```bash
+git push origin v0.2.0
+```
+
+Para compilarlo en tu PC, usa el mismo comando de PyInstaller que está en ese workflow.
 
 La sesión anónima de la PC se guarda en `%APPDATA%\Vincle\session.json`. Gracias a eso la PC sigue siendo el mismo usuario cada vez que se abre.
 

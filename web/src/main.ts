@@ -6,7 +6,7 @@ import { startScanner } from './scanner'
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 
-const screens = { connect: $('connect'), pad: $('pad'), keys: $('keys') }
+const screens = { desktop: $('desktop'), connect: $('connect'), pad: $('pad'), keys: $('keys') }
 type ScreenName = keyof typeof screens
 
 let room: Room | null = null
@@ -224,5 +224,9 @@ if (pinInUrl) {
 } else {
   const saved = savedRoom()
   if (saved) enterRoom(saved)
+  // Con mouse y sin pantalla táctil es casi seguro una computadora: lo útil ahí es descargar el programa.
+  else if (matchMedia('(hover: hover) and (pointer: fine)').matches) show('desktop')
   else show('connect')
 }
+
+$('use-as-remote').addEventListener('click', () => show('connect'))

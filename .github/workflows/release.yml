@@ -1,0 +1,37 @@
+# Al subir una etiqueta v* (por ejemplo v0.1.0), compila Vincle.exe en Windows y lo publica
+# en GitHub Releases. La web descarga siempre el de la última versión.
+name: Publicar Vincle.exe
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: desktop/requirements.txt
+      - run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+      - run: >
+          pyinstaller --noconfirm --clean --onefile --windowed --name Vincle
+          --icon icon.ico --add-data "icon.ico;."
+          --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32
+          vincle.py
+      - name: Crear la versión con el .exe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}" dist/Vincle.exe
+          --title "Vincle ${{ github.ref_name }}"
+          --notes "Programa para la PC. Descarga Vincle.exe y ábrelo con doble clic: no hace falta instalar nada. La primera vez Windows puede mostrar 'Windows protegió su PC': toca 'Más información' y luego 'Ejecutar de todas formas'."
