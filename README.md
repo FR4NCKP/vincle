@@ -33,7 +33,7 @@ En el celular no se instala nada: Vincle se abre en el navegador desde https://f
 6. Presentación (ícono de pantalla con un triángulo, arriba):
    - **Siguiente** y **Anterior** pasan las diapositivas con AvPág y RePág, las mismas teclas que usan los presentadores inalámbricos; funcionan en PowerPoint, Google Slides, Canva y visores de PDF
    - **Iniciar presentación** manda F5 y **Salir** manda Esc
-   - en la zona **Láser**, mientras mantienes el dedo y lo mueves, aparece un punto rojo en la pantalla de la PC donde está la presentación (también en un proyector). Al soltar desaparece. No mueve el mouse ni hace clic
+   - en la zona **Láser**, mientras mantienes el dedo y lo mueves, aparece un punto rojo en la pantalla de la PC donde está la presentación (también en un proyector), con una estela que se desvanece en medio segundo. Al soltar el punto se oculta y, al volver a tocar, sigue desde donde quedó. No mueve el mouse ni hace clic
    - mientras estás en esta pantalla, el celular no se apaga solo
 7. Arriba se ve «Conectado · directo» cuando el celular habla directo con la PC, o solo «Conectado» si va por Supabase.
 8. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
@@ -75,7 +75,7 @@ Del celular a la PC:
 | `drag` | `{down: true \| false}` | Mantiene o suelta el botón izquierdo. |
 | `text` | `{text}` | Escribe el texto (admite tildes y ñ). |
 | `key` | `{key, ctrl}` | `esc`, `tab`, `left`, `right`, `enter`, `backspace`, `pagedown`, `pageup`, `f5` o un solo carácter. |
-| `laser` | `{on: true \| false}` | Muestra u oculta el punto láser, al centro de la pantalla de la ventana activa. |
+| `laser` | `{on: true \| false}` | Muestra u oculta el punto láser. Sigue donde quedó; solo empieza al centro la primera vez o si la ventana activa pasó a otra pantalla. |
 | `laser_move` | `{x, y}` en píxeles | Mueve el punto láser (sin tocar el mouse). |
 
 Todos los eventos menos `hello` llevan además un número `n` que empieza en 1 con cada `hello`. Realtime puede entregar desordenados dos mensajes enviados casi juntos, así que la PC ejecuta clics, arrastres y teclas según ese número. Si falta uno, espera hasta 150 ms y, si no llega, sigue sin él (Broadcast no reintenta). `move` y `scroll` se aplican apenas llegan, porque sumar desplazamientos da lo mismo en cualquier orden; así el cursor nunca se frena esperando otro mensaje. Antes de un clic o una tecla, la PC termina de aplicar el movimiento pendiente. El celular no envía órdenes hasta recibir `accepted`.

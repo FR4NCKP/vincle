@@ -31,7 +31,7 @@ from supabase import AsyncClientOptions, acreate_client
 from supabase_auth import AsyncSupportedStorage
 
 # Debe coincidir con la etiqueta de la versión en GitHub (v0.2.0); el workflow lo verifica.
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 RELEASES_API = "https://api.github.com/repos/FR4NCKP/vincle/releases/latest"
 EXE_NAME = "Vincle.exe"
 
@@ -581,58 +581,113 @@ def monitor_of_active_window() -> tuple[int, int, int, int]:
     return r.left, r.top, r.right, r.bottom
 
 
-class LaserDot:
-    """Punto rojo para señalar en una presentación. Es una ventanita sin bordes, siempre encima
-    de todo (también de una presentación a pantalla completa) y que deja pasar los clics: no
-    mueve el mouse ni hace clic, solo se ve."""
+def overlay_window(root: tk.Tk, key: str) -> tk.Toplevel:
+    """Ventana sin bordes, siempre encima de todo (también de una presentación a pantalla
+    completa), con fondo transparente, que deja pasar los clics y no sale en la barra de tareas."""
+    top = tk.Toplevel(root)
+    top.withdraw()
+    top.overrideredirect(True)
+    top.attributes("-topmost", True)
+    top.attributes("-transparentcolor", key)
+    top.configure(bg=key)
+    top.update_idletasks()
+    user32 = ctypes.windll.user32
+    hwnd = user32.GetParent(top.winfo_id())
+    ex = user32.GetWindowLongW(hwnd, -20)  # GWL_EXSTYLE
+    user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20 | 0x80 | 0x8000000)  # LAYERED|TRANSPARENT|TOOLWINDOW|NOACTIVATE
+    return top
+
+
+def mix(c1: str, c2: str, t: float) -> str:
+    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
+
+
+class Laser:
+    """Puntero láser para presentaciones: un punto rojo y, detrás, una estela que se afina y se
+    desvanece en medio segundo. No mueve el mouse ni hace clic, solo se ve.
+
+    Al soltar el dedo el punto se oculta pero recuerda dónde quedó, y al volver a tocar sigue
+    desde ahí. Solo vuelve al centro la primera vez o si la ventana activa (la presentación)
+    pasó a otra pantalla."""
 
     SIZE = 30
     KEY = "#010203"  # color que Windows vuelve transparente
+    RED, LIGHT = "#E5322D", "#FFC2BF"
+    TRAIL_S = 0.5
+    TRAIL_WIDTH = 12
 
     def __init__(self, root: tk.Tk) -> None:
-        self.top = tk.Toplevel(root)
-        self.top.withdraw()
-        self.top.overrideredirect(True)
-        self.top.attributes("-topmost", True)
-        self.top.attributes("-transparentcolor", self.KEY)
-        canvas = tk.Canvas(self.top, width=self.SIZE, height=self.SIZE, bg=self.KEY, highlightthickness=0)
-        canvas.pack()
-        canvas.create_oval(1, 1, self.SIZE - 1, self.SIZE - 1, fill="#FF8C87", outline="")  # halo
-        canvas.create_oval(7, 7, self.SIZE - 7, self.SIZE - 7, fill="#E5322D", outline="")  # centro
-        self.top.update_idletasks()
-        # Que los clics atraviesen el punto y que no aparezca en la barra de tareas.
-        user32 = ctypes.windll.user32
-        hwnd = user32.GetParent(self.top.winfo_id())
-        ex = user32.GetWindowLongW(hwnd, -20)  # GWL_EXSTYLE
-        user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20 | 0x80 | 0x8000000)  # LAYERED|TRANSPARENT|TOOLWINDOW|NOACTIVATE
+        # La estela va en una capa del tamaño de la pantalla, semitransparente y debajo del punto.
+        self.trail_win = overlay_window(root, self.KEY)
+        self.trail_win.attributes("-alpha", 0.6)
+        self.trail = tk.Canvas(self.trail_win, bg=self.KEY, highlightthickness=0)
+        self.trail.pack(fill="both", expand=True)
+        self.dot_win = overlay_window(root, self.KEY)
+        dot = tk.Canvas(self.dot_win, width=self.SIZE, height=self.SIZE, bg=self.KEY, highlightthickness=0)
+        dot.pack()
+        dot.create_oval(1, 1, self.SIZE - 1, self.SIZE - 1, fill="#FF8C87", outline="")  # halo
+        dot.create_oval(7, 7, self.SIZE - 7, self.SIZE - 7, fill=self.RED, outline="")  # centro
         self.visible = False
+        self.trail_shown = False
+        self.points: list[tuple[float, float, float]] = []  # (momento, x, y) de los últimos 0,5 s
         self.x = self.y = 0.0
-        self.bounds = (0, 0, 0, 0)
+        self.bounds: tuple[int, int, int, int] | None = None
 
     def show(self) -> None:
         if self.visible:
             return
-        self.bounds = monitor_of_active_window()
-        left, top, right, bottom = self.bounds
-        self.x, self.y = (left + right) / 2, (top + bottom) / 2  # empieza al centro
-        self.place()
-        self.top.deiconify()
-        self.top.lift()
+        bounds = monitor_of_active_window()
+        if bounds != self.bounds:
+            left, top, right, bottom = self.bounds = bounds
+            self.x, self.y = (left + right) / 2, (top + bottom) / 2
+            self.trail_win.geometry(f"{right - left}x{bottom - top}+{left}+{top}")
+            self.points.clear()
+        self.place_dot()
+        self.dot_win.deiconify()
+        self.dot_win.lift()
         self.visible = True
 
     def hide(self) -> None:
-        self.top.withdraw()
+        # La estela que quedó se termina de desvanecer sola (ver tick).
+        self.dot_win.withdraw()
         self.visible = False
 
     def move(self, dx: float, dy: float) -> None:
         left, top, right, bottom = self.bounds
         self.x = min(max(self.x + dx, left), right - 1)
         self.y = min(max(self.y + dy, top), bottom - 1)
-        self.place()
+        self.place_dot()
+        if not self.points:
+            self.points.append((time.perf_counter(), self.x, self.y))  # punto de partida del trazo
+        self.points.append((time.perf_counter(), self.x, self.y))
+        if not self.trail_shown:
+            self.trail_win.deiconify()
+            self.dot_win.lift()
+            self.trail_shown = True
 
-    def place(self) -> None:
+    def place_dot(self) -> None:
         half = self.SIZE // 2
-        self.top.geometry(f"+{int(self.x) - half}+{int(self.y) - half}")
+        self.dot_win.geometry(f"+{int(self.x) - half}+{int(self.y) - half}")
+
+    def tick(self) -> bool:
+        """Redibuja la estela. Devuelve False cuando ya no queda nada que animar."""
+        now = time.perf_counter()
+        self.points = [p for p in self.points if now - p[0] < self.TRAIL_S]
+        self.trail.delete("all")
+        left, top = self.bounds[0], self.bounds[1]
+        for (_, x0, y0), (t1, x1, y1) in zip(self.points, self.points[1:]):
+            fade = (now - t1) / self.TRAIL_S  # 0 = recién, 1 = a punto de desaparecer
+            self.trail.create_line(
+                x0 - left, y0 - top, x1 - left, y1 - top,
+                width=max(1.0, self.TRAIL_WIDTH * (1 - fade)), fill=mix(self.RED, self.LIGHT, fade),
+                capstyle="round",
+            )
+        if not self.points and self.trail_shown:
+            self.trail_win.withdraw()
+            self.trail_shown = False
+        return self.visible or bool(self.points)
 
 
 class Window:
@@ -647,7 +702,8 @@ class Window:
         self.root.resizable(False, False)
         self.ui: queue.Queue = queue.Queue()
         self.link = Link(self.ui)
-        self.laser = LaserDot(self.root)
+        self.laser = Laser(self.root)
+        self.laser_ticking = False
         self.expires: datetime | None = None
         self.guest_here = False
         self.direct = False
@@ -778,15 +834,18 @@ class Window:
             return
         self.link.take_laser_delta()  # lo acumulado antes de encender no cuenta
         self.laser.show()
-        self.laser_tick()
+        if not self.laser_ticking:
+            self.laser_ticking = True
+            self.laser_tick()
 
     def laser_tick(self) -> None:
-        if not self.laser.visible:
-            return
         dx, dy = self.link.take_laser_delta()
-        if dx or dy:
+        if (dx or dy) and self.laser.visible:
             self.laser.move(dx, dy)
-        self.root.after(8, self.laser_tick)
+        if self.laser.tick():
+            self.root.after(8, self.laser_tick)
+        else:
+            self.laser_ticking = False
 
     def on_status(self, text: str) -> None:
         self.status.config(text=text)
