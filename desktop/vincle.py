@@ -31,7 +31,7 @@ from supabase import AsyncClientOptions, acreate_client
 from supabase_auth import AsyncSupportedStorage
 
 # Debe coincidir con la etiqueta de la versión en GitHub (v0.2.0); el workflow lo verifica.
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 RELEASES_API = "https://api.github.com/repos/FR4NCKP/vincle/releases/latest"
 EXE_NAME = "Vincle.exe"
 
@@ -54,7 +54,7 @@ GAP_WAIT_S = 0.15
 # Servidor STUN público y gratuito: solo le dice a cada lado su dirección vista desde internet.
 STUN_URL = "stun:stun.l.google.com:19302"
 MAX_SDP = 20_000
-CONTINUOUS_EVENTS = ("move", "scroll")
+CONTINUOUS_EVENTS = ("move", "scroll", "laser_move")
 SPECIAL_KEYS = {
     "esc": Key.esc,
     "tab": Key.tab,
@@ -62,6 +62,10 @@ SPECIAL_KEYS = {
     "right": Key.right,
     "enter": Key.enter,
     "backspace": Key.backspace,
+    # Modo presentación: las teclas que mandan los presentadores inalámbricos.
+    "pagedown": Key.page_down,
+    "pageup": Key.page_up,
+    "f5": Key.f5,
 }
 
 PAPER, INK, MUTED = "#F5F5F3", "#0A0A0A", "#5C5C5A"
@@ -244,6 +248,8 @@ class Link:
         self.pending: dict[int, dict] = {}
         self.gap_handle: asyncio.TimerHandle | None = None
         self.peer: RTCPeerConnection | None = None
+        self.laser_lock = threading.Lock()
+        self.laser_delta = [0, 0]
 
     # ---------- Hilo y llamadas desde la ventana ----------
 
@@ -314,7 +320,7 @@ class Link:
         )
         ch.on_broadcast("hello", lambda _m: self.on_hello())
         ch.on_broadcast("rtc-offer", lambda m: asyncio.ensure_future(self.on_rtc_offer(m.get("payload") or {})))
-        for event in ("move", "scroll", "click", "drag", "text", "key"):
+        for event in ("move", "scroll", "click", "drag", "text", "key", "laser", "laser_move"):
             ch.on_broadcast(event, self.on_input)
         ch.on_presence_sync(self.on_presence)
         self.channel = ch
@@ -340,6 +346,7 @@ class Link:
             self.refresh_handle = None
         self.release_drag()
         self.reset_order()
+        self.ui.put(("laser", False))
         await self.close_peer()
         if self.channel is not None:
             if self.accepted:
@@ -363,6 +370,8 @@ class Link:
         guest_here = "guest" in self.channel.presence_state()
         if self.accepted:
             self.ui.put(("connected", guest_here))
+        if not guest_here:
+            self.ui.put(("laser", False))
 
     # ---------- Permiso ----------
 
@@ -524,6 +533,23 @@ class Link:
     def do_text(self, d: dict) -> None:
         self.keyboard.type(str(d["text"])[:MAX_TEXT])
 
+    def do_laser(self, d: dict) -> None:
+        self.ui.put(("laser", bool(d["on"])))
+
+    def do_laser_move(self, d: dict) -> None:
+        x = max(-MAX_MOVE, min(MAX_MOVE, int(d["x"])))
+        y = max(-MAX_MOVE, min(MAX_MOVE, int(d["y"])))
+        with self.laser_lock:
+            self.laser_delta[0] += x
+            self.laser_delta[1] += y
+
+    def take_laser_delta(self) -> tuple[int, int]:
+        """Lo usa la ventana (otro hilo) para mover el punto láser."""
+        with self.laser_lock:
+            dx, dy = self.laser_delta
+            self.laser_delta = [0, 0]
+        return dx, dy
+
     def do_key(self, d: dict) -> None:
         name = str(d["key"])
         key = SPECIAL_KEYS.get(name) or (KeyCode.from_char(name) if len(name) == 1 else None)
@@ -534,6 +560,79 @@ class Link:
                 self.keyboard.tap(key)
         else:
             self.keyboard.tap(key)
+
+
+def monitor_of_active_window() -> tuple[int, int, int, int]:
+    """Rectángulo (izq, arriba, der, abajo) de la pantalla donde está la ventana activa: con
+    proyector, la presentación suele estar en la segunda pantalla."""
+    class RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", RECT), ("rcWork", RECT), ("dwFlags", ctypes.c_ulong)]
+
+    user32 = ctypes.windll.user32
+    monitor = user32.MonitorFromWindow(user32.GetForegroundWindow(), 2)  # MONITOR_DEFAULTTONEAREST
+    info = MONITORINFO()
+    info.cbSize = ctypes.sizeof(MONITORINFO)
+    if not monitor or not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        return 0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    r = info.rcMonitor
+    return r.left, r.top, r.right, r.bottom
+
+
+class LaserDot:
+    """Punto rojo para señalar en una presentación. Es una ventanita sin bordes, siempre encima
+    de todo (también de una presentación a pantalla completa) y que deja pasar los clics: no
+    mueve el mouse ni hace clic, solo se ve."""
+
+    SIZE = 30
+    KEY = "#010203"  # color que Windows vuelve transparente
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.top = tk.Toplevel(root)
+        self.top.withdraw()
+        self.top.overrideredirect(True)
+        self.top.attributes("-topmost", True)
+        self.top.attributes("-transparentcolor", self.KEY)
+        canvas = tk.Canvas(self.top, width=self.SIZE, height=self.SIZE, bg=self.KEY, highlightthickness=0)
+        canvas.pack()
+        canvas.create_oval(1, 1, self.SIZE - 1, self.SIZE - 1, fill="#FF8C87", outline="")  # halo
+        canvas.create_oval(7, 7, self.SIZE - 7, self.SIZE - 7, fill="#E5322D", outline="")  # centro
+        self.top.update_idletasks()
+        # Que los clics atraviesen el punto y que no aparezca en la barra de tareas.
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetParent(self.top.winfo_id())
+        ex = user32.GetWindowLongW(hwnd, -20)  # GWL_EXSTYLE
+        user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20 | 0x80 | 0x8000000)  # LAYERED|TRANSPARENT|TOOLWINDOW|NOACTIVATE
+        self.visible = False
+        self.x = self.y = 0.0
+        self.bounds = (0, 0, 0, 0)
+
+    def show(self) -> None:
+        if self.visible:
+            return
+        self.bounds = monitor_of_active_window()
+        left, top, right, bottom = self.bounds
+        self.x, self.y = (left + right) / 2, (top + bottom) / 2  # empieza al centro
+        self.place()
+        self.top.deiconify()
+        self.top.lift()
+        self.visible = True
+
+    def hide(self) -> None:
+        self.top.withdraw()
+        self.visible = False
+
+    def move(self, dx: float, dy: float) -> None:
+        left, top, right, bottom = self.bounds
+        self.x = min(max(self.x + dx, left), right - 1)
+        self.y = min(max(self.y + dy, top), bottom - 1)
+        self.place()
+
+    def place(self) -> None:
+        half = self.SIZE // 2
+        self.top.geometry(f"+{int(self.x) - half}+{int(self.y) - half}")
 
 
 class Window:
@@ -548,6 +647,7 @@ class Window:
         self.root.resizable(False, False)
         self.ui: queue.Queue = queue.Queue()
         self.link = Link(self.ui)
+        self.laser = LaserDot(self.root)
         self.expires: datetime | None = None
         self.guest_here = False
         self.direct = False
@@ -669,6 +769,24 @@ class Window:
         else:
             text = "Conectado por internet (Supabase). Si están en la misma red Wi-Fi, se pasará solo a conexión directa."
         self.status.config(text=text)
+
+    def on_laser(self, on: bool) -> None:
+        if not on:
+            self.laser.hide()
+            return
+        if self.laser.visible:
+            return
+        self.link.take_laser_delta()  # lo acumulado antes de encender no cuenta
+        self.laser.show()
+        self.laser_tick()
+
+    def laser_tick(self) -> None:
+        if not self.laser.visible:
+            return
+        dx, dy = self.link.take_laser_delta()
+        if dx or dy:
+            self.laser.move(dx, dy)
+        self.root.after(8, self.laser_tick)
 
     def on_status(self, text: str) -> None:
         self.status.config(text=text)

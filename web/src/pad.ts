@@ -26,6 +26,42 @@ export function setSensitivity(v: number) {
   try { localStorage.setItem(SENS_KEY, String(v)) } catch { /* solo esta sesión */ }
 }
 
+/** Aceleración simple: lento = preciso, rápido = recorre la pantalla. */
+export function pointerGain(dx: number, dy: number) {
+  return BASE_GAIN * getSensitivity() * (1 + Math.min(Math.hypot(dx, dy), 30) / 15)
+}
+
+/**
+ * Acumula desplazamientos y los manda como mucho cada SEND_INTERVAL_MS (o el intervalo de la
+ * conexión directa). Se envía solo la parte entera y el resto se guarda para el siguiente.
+ */
+export function createStream(event: 'move' | 'scroll' | 'laser_move') {
+  let ax = 0, ay = 0
+  let lastSend = 0
+  let timer = 0
+
+  function flush() {
+    clearTimeout(timer)
+    timer = 0
+    lastSend = performance.now()
+    const ix = Math.trunc(ax), iy = Math.trunc(ay)
+    if (!ix && !iy) return
+    ax -= ix
+    ay -= iy
+    send({ event, payload: { x: ix, y: iy } })
+  }
+
+  function add(dx: number, dy: number) {
+    ax += dx
+    ay += dy
+    if (timer) return
+    const interval = isDirect() ? DIRECT_SEND_INTERVAL_MS : SEND_INTERVAL_MS
+    timer = window.setTimeout(flush, Math.max(0, lastSend + interval - performance.now()))
+  }
+
+  return { add, flush }
+}
+
 type Pointer = { x: number; y: number; startX: number; startY: number }
 
 export function setupPad(surface: HTMLElement, ring: HTMLElement) {
@@ -36,31 +72,8 @@ export function setupPad(surface: HTMLElement, ring: HTMLElement) {
   let dragging = false
   let holdTimer = 0
 
-  // Movimiento acumulado entre envíos; se manda solo la parte entera y se guarda el resto.
-  let mx = 0, my = 0, sx = 0, sy = 0
-  let lastSend = 0
-  let flushTimer = 0
-
-  function flush() {
-    flushTimer = 0
-    lastSend = performance.now()
-    const ix = Math.trunc(mx), iy = Math.trunc(my)
-    if (ix || iy) {
-      mx -= ix; my -= iy
-      send({ event: 'move', payload: { x: ix, y: iy } })
-    }
-    const jx = Math.trunc(sx), jy = Math.trunc(sy)
-    if (jx || jy) {
-      sx -= jx; sy -= jy
-      send({ event: 'scroll', payload: { x: jx, y: jy } })
-    }
-  }
-
-  function schedule() {
-    if (flushTimer) return
-    const interval = isDirect() ? DIRECT_SEND_INTERVAL_MS : SEND_INTERVAL_MS
-    flushTimer = window.setTimeout(flush, Math.max(0, lastSend + interval - performance.now()))
-  }
+  const moves = createStream('move')
+  const scrolls = createStream('scroll')
 
   function placeRing(x: number, y: number) {
     const r = surface.getBoundingClientRect()
@@ -108,23 +121,20 @@ export function setupPad(surface: HTMLElement, ring: HTMLElement) {
     }
 
     if (pointers.size === 1) {
-      // Aceleración simple: lento = preciso, rápido = recorre la pantalla.
-      const gain = BASE_GAIN * getSensitivity() * (1 + Math.min(Math.hypot(dx, dy), 30) / 15)
-      mx += dx * gain
-      my += dy * gain
+      const gain = pointerGain(dx, dy)
+      moves.add(dx * gain, dy * gain)
       placeRing(e.clientX, e.clientY)
     } else {
       // Cada dedo aporta su parte: el promedio es el desplazamiento del gesto.
-      sx += (dx / pointers.size) * SCROLL_GAIN
-      sy += (dy / pointers.size) * SCROLL_GAIN
+      scrolls.add((dx / pointers.size) * SCROLL_GAIN, (dy / pointers.size) * SCROLL_GAIN)
     }
-    schedule()
   })
 
   function end(e: PointerEvent) {
     if (!pointers.delete(e.pointerId) || pointers.size > 0) return
     clearTimeout(holdTimer)
-    flush()
+    moves.flush()
+    scrolls.flush()
     if (dragging) {
       dragging = false
       ring.classList.remove('drag')

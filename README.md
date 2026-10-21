@@ -30,8 +30,13 @@ En el celular no se instala nada: Vincle se abre en el navegador desde https://f
    - mientras escribes aparece una fila con `esc`, `tab`, `ctrl`, las flechas, borrar y Enter
    - `ctrl` queda activo para la siguiente tecla: tocas `ctrl` y luego la `c` y se manda ctrl + c
    - para dejar de escribir, bajas el teclado del celular o tocas otra vez el ícono de teclado
-6. Arriba se ve «Conectado · directo» cuando el celular habla directo con la PC, o solo «Conectado» si va por Supabase.
-7. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
+6. Presentación (ícono de pantalla con un triángulo, arriba):
+   - **Siguiente** y **Anterior** pasan las diapositivas con AvPág y RePág, las mismas teclas que usan los presentadores inalámbricos; funcionan en PowerPoint, Google Slides, Canva y visores de PDF
+   - **Iniciar presentación** manda F5 y **Salir** manda Esc
+   - en la zona **Láser**, mientras mantienes el dedo y lo mueves, aparece un punto rojo en la pantalla de la PC donde está la presentación (también en un proyector). Al soltar desaparece. No mueve el mouse ni hace clic
+   - mientras estás en esta pantalla, el celular no se apaga solo
+7. Arriba se ve «Conectado · directo» cuando el celular habla directo con la PC, o solo «Conectado» si va por Supabase.
+8. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
 
 ## Configuración de Supabase
 
@@ -48,7 +53,7 @@ El proyecto `vincle` ya está creado (plan Free, región `sa-east-1`, São Paulo
 | Objeto | Para qué |
 | --- | --- |
 | `rooms` | Una sala por PC: PIN, quién la creó (`host_id`), quién la reclamó (`guest_id`) y cuándo vence el PIN. Cada miembro solo puede leer su propia sala. |
-| `claim_attempts` | Intentos de reclamar un PIN. Se aceptan 10 cada 10 minutos por usuario. |
+| `claim_attempts` | Intentos fallidos de reclamar un PIN. Con 10 fallos en 10 minutos, el usuario queda bloqueado un rato. |
 | `create_room(nombre)` | La llama la PC. Borra su sala anterior y crea otra con un PIN aleatorio que no esté en uso. |
 | `claim_room(pin)` | La llama el celular. Si el PIN existe, está vigente y nadie lo usó, lo asigna a quien llama. Después de eso el PIN ya no sirve. |
 | Políticas en `realtime.messages` | En el canal `room:<id>` solo el host y el guest de esa sala pueden unirse, enviar y recibir Broadcast y Presence. |
@@ -69,7 +74,9 @@ Del celular a la PC:
 | `click` | `{button: "left" \| "right"}` | Clic. |
 | `drag` | `{down: true \| false}` | Mantiene o suelta el botón izquierdo. |
 | `text` | `{text}` | Escribe el texto (admite tildes y ñ). |
-| `key` | `{key, ctrl}` | `esc`, `tab`, `left`, `right`, `enter`, `backspace` o un solo carácter. |
+| `key` | `{key, ctrl}` | `esc`, `tab`, `left`, `right`, `enter`, `backspace`, `pagedown`, `pageup`, `f5` o un solo carácter. |
+| `laser` | `{on: true \| false}` | Muestra u oculta el punto láser, al centro de la pantalla de la ventana activa. |
+| `laser_move` | `{x, y}` en píxeles | Mueve el punto láser (sin tocar el mouse). |
 
 Todos los eventos menos `hello` llevan además un número `n` que empieza en 1 con cada `hello`. Realtime puede entregar desordenados dos mensajes enviados casi juntos, así que la PC ejecuta clics, arrastres y teclas según ese número. Si falta uno, espera hasta 150 ms y, si no llega, sigue sin él (Broadcast no reintenta). `move` y `scroll` se aplican apenas llegan, porque sumar desplazamientos da lo mismo en cualquier orden; así el cursor nunca se frena esperando otro mensaje. Antes de un clic o una tecla, la PC termina de aplicar el movimiento pendiente. El celular no envía órdenes hasta recibir `accepted`.
 
@@ -79,7 +86,7 @@ La PC no mueve el cursor de golpe con cada `move`: lo reparte en pasos de 4 ms a
 
 Por Supabase cada movimiento tarda unos 100 ms, porque va a São Paulo y vuelve. Por eso, en cuanto recibe `accepted`, el celular propone una conexión directa:
 
-1. Crea dos canales de datos: `fast` (sin orden ni reenvíos, para `move` y `scroll`) y `sure` (en orden y sin pérdidas, para todo lo demás).
+1. Crea dos canales de datos: `fast` (sin orden ni reenvíos, para `move`, `scroll` y `laser_move`) y `sure` (en orden y sin pérdidas, para todo lo demás).
 2. Junta sus candidatos de red, con ayuda del STUN público y gratuito de Google, y manda la oferta completa como `rtc-offer` `{sdp}` por el canal privado.
 3. La PC (`aiortc`) responde con `rtc-answer` `{sdp}`. Solo atiende ofertas después de haber dado permiso.
 4. Cuando los dos canales abren, el celular manda las órdenes por ahí como JSON `{event, payload}`, sin el número `n` (el canal `sure` ya garantiza el orden), y envía el movimiento cada 8 ms en lugar de cada 33 ms.
@@ -150,7 +157,7 @@ Cada push a `main` que toque `web/` compila la app y la publica en GitHub Pages 
 Quien maneja el teclado de una PC puede escribir comandos, así que la conexión tiene varias capas:
 
 - El PIN vence a los 2 minutos y deja de servir apenas alguien lo reclama.
-- Cada usuario tiene 10 intentos de PIN cada 10 minutos.
+- Con 10 PIN equivocados en 10 minutos, el usuario queda bloqueado un rato.
 - El canal es privado y lo protegen políticas RLS: nadie fuera de la sala puede unirse, escuchar ni enviar.
 - Hasta que alguien acepta en la ventana de la PC, las órdenes se descartan.
 - Los movimientos tienen tope, el texto se corta a 2000 caracteres y los eventos desconocidos o mal formados se ignoran.

@@ -2,11 +2,12 @@ import './style.css'
 import { claim, disconnect, join, savedRoom, send, type LinkState, type Room } from './net'
 import { getSensitivity, setSensitivity, setupPad } from './pad'
 import { setupKeys } from './keys'
+import { keepScreenOn, setupPresent } from './present'
 import { startScanner } from './scanner'
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 
-const screens = { desktop: $('desktop'), connect: $('connect'), pad: $('pad') }
+const screens = { desktop: $('desktop'), connect: $('connect'), pad: $('pad'), present: $('present') }
 type ScreenName = keyof typeof screens
 
 const typingInput = $<HTMLInputElement>('texto')
@@ -18,6 +19,7 @@ function show(name: ScreenName) {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name
   if (name !== 'connect') stopScanner()
   if (name !== 'pad') typingInput.blur()
+  void keepScreenOn(name === 'present')
 }
 
 // ---------- Alto visible: el teclado del sistema no debe tapar la barra de teclas ----------
@@ -184,6 +186,16 @@ setupKeys({
     screens.pad.classList.toggle('typing-on', typing)
     toggleKeys.setAttribute('aria-pressed', String(typing))
   },
+})
+
+// ---------- 03 Presentación ----------
+
+setupPresent({ laserPad: $('laser-pad'), laserDot: $('laser-dot'), buttons: $('slide-buttons') })
+$('open-present').addEventListener('click', () => show('present'))
+$('close-present').addEventListener('click', () => show('pad'))
+// El sistema suelta el "mantener encendida" al salir de la app; al volver se pide de nuevo.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !screens.present.hidden) void keepScreenOn(true)
 })
 
 // ---------- Ajustes ----------

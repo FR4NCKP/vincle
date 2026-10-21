@@ -21,6 +21,8 @@ export type Outgoing =
   | { event: 'drag'; payload: { down: boolean } }
   | { event: 'text'; payload: { text: string } }
   | { event: 'key'; payload: { key: string; ctrl: boolean } }
+  | { event: 'laser'; payload: { on: boolean } }
+  | { event: 'laser_move'; payload: { x: number; y: number } }
 
 const ROOM_KEY = 'vincle.room'
 
@@ -218,7 +220,8 @@ export function send(msg: Outgoing) {
   // Sin permiso de la PC no se envía nada: la PC lo descartaría y gastaría cuota.
   if (!accepted) return
   if (isDirect()) {
-    const dc = msg.event === 'move' || msg.event === 'scroll' ? fast! : sure!
+    const continuous = msg.event === 'move' || msg.event === 'scroll' || msg.event === 'laser_move'
+    const dc = continuous ? fast! : sure!
     dc.send(JSON.stringify(msg))
     return
   }
