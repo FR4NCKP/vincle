@@ -31,7 +31,7 @@ from supabase import AsyncClientOptions, acreate_client
 from supabase_auth import AsyncSupportedStorage
 
 # Debe coincidir con la etiqueta de la versión en GitHub (v0.2.0); el workflow lo verifica.
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 RELEASES_API = "https://api.github.com/repos/FR4NCKP/vincle/releases/latest"
 EXE_NAME = "Vincle.exe"
 
@@ -149,12 +149,19 @@ async def install_update(exe: Path, asset: dict) -> None:
 
 
 def remove_old_exe() -> None:
-    if getattr(sys, "frozen", False):
-        exe = Path(sys.executable)
-        try:
-            exe.with_name(exe.stem + ".old.exe").unlink(missing_ok=True)
-        except OSError:
-            pass  # Si la versión anterior todavía se está cerrando, se borra la próxima vez.
+    if not getattr(sys, "frozen", False):
+        return
+    exe = Path(sys.executable)
+    old = exe.with_name(exe.stem + ".old.exe")
+    if not old.exists():
+        return
+    try:
+        old.unlink()
+    except OSError:
+        pass  # Si la versión anterior todavía se está cerrando, se borra la próxima vez.
+    # Recién actualizado: Windows guarda los íconos por ruta de archivo y seguiría mostrando
+    # el de la versión anterior; así se le pide que vuelva a leerlos.
+    ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)  # SHCNE_ASSOCCHANGED
 
 
 class Smoother:
