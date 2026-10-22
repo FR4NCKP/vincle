@@ -1,9 +1,11 @@
 import './style.css'
+import './motion.css'
 import { claim, disconnect, join, savedRoom, send, type LinkState, type Room } from './net'
 import { getSensitivity, setSensitivity, setupPad } from './pad'
 import { setupKeys } from './keys'
 import { keepScreenOn, setupPresent } from './present'
 import { startScanner } from './scanner'
+import { playEnter, replay, setupPressFeedback, wait } from './motion'
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 
@@ -16,7 +18,9 @@ let room: Room | null = null
 let stopScan: (() => void) | null = null
 
 function show(name: ScreenName) {
+  const wasHidden = screens[name].hidden
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name
+  if (wasHidden) playEnter(screens[name])
   if (name !== 'connect') stopScanner()
   if (name !== 'pad') typingInput.blur()
   void keepScreenOn(name === 'present')
@@ -54,7 +58,11 @@ function setStatus(state: LinkState) {
     : state === 'host-away' ? `${name} no está en línea`
     : 'Conectando…'
   for (const el of statusEls) {
-    el.querySelector('[data-status-text]')!.textContent = text
+    const label = el.querySelector<HTMLElement>('[data-status-text]')!
+    if (label.textContent !== text) {
+      label.textContent = text
+      replay(label, 'swap')
+    }
     el.classList.toggle('ok', state === 'connected' || state === 'direct')
   }
 }
@@ -100,13 +108,22 @@ async function connect(pin: string) {
     return
   }
   connectBtn.disabled = true
+  connectBtn.classList.add('loading')
   note('Conectando…')
+  const pinRow = $('pin')
   try {
-    enterRoom(await claim(pin))
+    const r = await claim(pin)
+    pinRow.classList.add('ok') // ola verde en los dígitos antes de pasar al trackpad
+    await wait(520)
+    enterRoom(r)
   } catch (err) {
     note((err as Error).message, true)
+    replay(pinRow, 'shake')
+    navigator.vibrate?.(60)
   } finally {
+    pinRow.classList.remove('ok')
     connectBtn.disabled = false
+    connectBtn.classList.remove('loading')
   }
 }
 
@@ -141,7 +158,7 @@ const SCAN_HINT = scanHint.textContent
 function stopScanner() {
   stopScan?.()
   stopScan = null
-  viewfinder.classList.remove('live')
+  viewfinder.classList.remove('live', 'found')
   scanHint.textContent = SCAN_HINT
 }
 
@@ -152,8 +169,12 @@ viewfinder.addEventListener('click', async () => {
   }
   scanHint.textContent = 'Abriendo la cámara…'
   try {
-    stopScan = await startScanner($<HTMLVideoElement>('scan-video'), (pin) => {
-      stopScan = null
+    stopScan = await startScanner($<HTMLVideoElement>('scan-video'), async (pin) => {
+      // Detectado: las esquinas se ajustan en verde y se dibuja un ✓; luego se conecta.
+      viewfinder.classList.add('found')
+      scanHint.textContent = '¡Código detectado!'
+      navigator.vibrate?.([15, 40, 15])
+      await wait(800)
       stopScanner()
       fillPin(pin)
       void connect(pin)
@@ -223,6 +244,8 @@ $('disconnect').addEventListener('click', () => {
 })
 
 // ---------- Arranque ----------
+
+setupPressFeedback()
 
 function connectFromUrl(): boolean {
   const pin = /^#(\d{6})$/.exec(location.hash)?.[1]

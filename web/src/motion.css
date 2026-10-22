@@ -1,0 +1,175 @@
+/* =====================================================================================
+   Movimiento. Curvas compartidas: --ease-out para entradas, --spring para rebotes leves.
+   Con "reducir movimiento" activado en el sistema, todo queda casi instantáneo (al final).
+   ===================================================================================== */
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+
+/* Botones: se hunden con un leve rebote, sale una onda de luz desde el toque (motion.ts) y
+   la flecha o el ícono se desliza. */
+button, a.pill-btn { position: relative; overflow: hidden; isolation: isolate; }
+button.raised, button.raised-sm, a.raised {
+  transition: box-shadow .18s var(--ease-out), transform .35s var(--spring), color .2s;
+}
+button.raised:active, button.raised-sm:active, a.raised:active { transform: scale(.965); transition-duration: .08s, .08s, .2s; }
+.ripple {
+  position: absolute; z-index: -1; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 255, 255, .9) 0%, rgba(255, 255, 255, .35) 40%, transparent 70%);
+  transform: scale(0); animation: ripple .6s var(--ease-out) forwards;
+}
+@keyframes ripple { to { transform: scale(1); opacity: 0; } }
+.pill-btn .well, .tile .well, .chip svg { transition: transform .35s var(--spring), color .2s; }
+.pill-btn:active .well, .tile.next:active .well { transform: translateX(5px); }
+.tile:active .well { transform: scale(.9); }
+.slide-buttons .tile:first-child:active .well { transform: translateX(-5px); }
+.round-btn svg { transition: transform .35s var(--spring); }
+.round-btn:active svg { transform: scale(.85) rotate(-8deg); }
+@media (hover: hover) {
+  .pill-btn:hover .well, .tile.next:hover .well { transform: translateX(3px); }
+  button.raised:hover, a.raised:hover { box-shadow: 9px 9px 18px var(--dark), -9px -9px 18px var(--light); }
+}
+
+/* Al pasar diapositiva, un destello de luz recorre la tarjeta. */
+.tile::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .85) 50%, transparent 70%);
+  transform: translateX(-120%);
+}
+.tile.flash::after { animation: sweep .55s var(--ease-out); }
+@keyframes sweep { to { transform: translateX(120%); } }
+
+/* Entrada de pantalla: los bloques suben y aparecen escalonados (motion.ts → playEnter). */
+.screen.entering { animation: hold .9s; }
+@keyframes hold { to { opacity: 1; } }
+.entering > *, .entering .scroll > *, .entering .rows > * {
+  animation: rise .6s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.entering .rows > * { animation-delay: calc(200ms + var(--i, 0) * 80ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(18px) scale(.97); } }
+.entering .logo { animation: logo-in .8s var(--spring) both; }
+@keyframes logo-in { from { opacity: 0; transform: scale(.4) rotate(-25deg); } }
+
+/* Código de 6 dígitos: cada dígito "salta" al escribirse; tiembla si es incorrecto y hace
+   una ola si es correcto. */
+.pin input.filled { animation: digit-pop .4s var(--spring); }
+@keyframes digit-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+.pin.shake { animation: shake .45s cubic-bezier(.36, .07, .19, .97); }
+@keyframes shake { 15%, 85% { transform: translateX(-3px); } 30%, 70% { transform: translateX(6px); } 45%, 55% { transform: translateX(-8px); } }
+.pin.ok input { animation: digit-ok .5s var(--spring) both; color: var(--ok); }
+.pin.ok input:nth-child(2) { animation-delay: 40ms; }
+.pin.ok input:nth-child(3) { animation-delay: 80ms; }
+.pin.ok input:nth-child(4) { animation-delay: 120ms; }
+.pin.ok input:nth-child(5) { animation-delay: 160ms; }
+.pin.ok input:nth-child(6) { animation-delay: 200ms; }
+@keyframes digit-ok { 50% { transform: translateY(-7px); box-shadow: var(--raised); } }
+.note { transition: color .25s; }
+
+/* Conectar: mientras conecta, la flecha se vuelve un anillo que gira. */
+.pill-btn .well { position: relative; }
+.pill-btn.loading .well svg { opacity: 0; }
+.pill-btn.loading .well::after {
+  content: ""; position: absolute; inset: 8px; border-radius: 50%;
+  border: 2px solid var(--dark); border-top-color: var(--accent); animation: spin .8s linear infinite;
+}
+.pill-btn.loading:disabled { opacity: 1; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Escáner QR ----------
+   En reposo, las esquinas "respiran"; con la cámara, se cierran sobre el centro y una línea
+   de luz barre con estela; al detectar el código, se ajustan en verde y se dibuja un ✓. */
+.corner { transition: border-color .3s, transform .5s var(--spring); }
+.viewfinder .corner.tl { --dx: -1; --dy: -1; }
+.viewfinder .corner.tr { --dx: 1; --dy: -1; }
+.viewfinder .corner.bl { --dx: -1; --dy: 1; }
+.viewfinder .corner.br { --dx: 1; --dy: 1; }
+.viewfinder:not(.live):not(.found) .corner { animation: breathe 2.8s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: translate(calc(var(--dx) * 4px), calc(var(--dy) * 4px)); } }
+.viewfinder.live .corner { animation: lock-in .7s var(--spring) both; }
+@keyframes lock-in { from { transform: translate(calc(var(--dx) * 60px), calc(var(--dy) * 40px)); opacity: 0; } }
+.scanline { transition: opacity .3s; }
+.viewfinder.live .scanline {
+  height: 3px; opacity: 1; background: var(--accent);
+  box-shadow: 0 0 12px 2px rgba(229, 50, 45, .65), 0 -18px 24px -6px rgba(229, 50, 45, .35);
+  animation: scan 1.8s cubic-bezier(.45, 0, .55, 1) infinite alternate;
+}
+.viewfinder.live::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, .35) 100%);
+}
+.viewfinder.found .corner {
+  border-color: var(--ok); animation: none;
+  transform: translate(calc(var(--dx) * -10px), calc(var(--dy) * -8px));
+}
+.viewfinder.found .scanline { opacity: 0; animation: none; }
+.scan-check { position: absolute; left: 50%; top: 42%; width: 72px; height: 72px; margin: -36px 0 0 -36px; opacity: 0; pointer-events: none; z-index: 2; }
+.scan-check circle { fill: rgba(52, 168, 107, .92); stroke: none; }
+.scan-check path { stroke: #fff; stroke-width: 4; stroke-dasharray: 40; stroke-dashoffset: 40; }
+.viewfinder.found .scan-check { animation: check-in .45s var(--spring) forwards; }
+.viewfinder.found .scan-check path { animation: draw .35s .2s var(--ease-out) forwards; }
+@keyframes check-in { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.viewfinder.found::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; pointer-events: none;
+  background: rgba(52, 168, 107, .25); animation: flash .6s var(--ease-out) forwards;
+}
+@keyframes flash { from { opacity: 1; } to { opacity: 0; } }
+
+/* ---------- Estado ---------- */
+.dot { position: relative; transition: background .3s; }
+.status.ok .dot::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
+  border: 2px solid var(--ok); animation: radar 2s var(--ease-out) infinite;
+}
+@keyframes radar { from { transform: scale(.4); opacity: .9; } to { transform: scale(1.8); opacity: 0; } }
+[data-status-text].swap { animation: text-swap .35s var(--ease-out); }
+@keyframes text-swap { from { opacity: 0; transform: translateY(5px); } }
+
+/* ---------- Trackpad ---------- */
+.ring { transition: opacity .3s, transform .35s var(--spring), box-shadow .2s; }
+.ring:not(.idle) { transform: scale(1.06); }
+.surface .tap {
+  position: absolute; border-radius: 50%; pointer-events: none;
+  border: 2px solid var(--ink-2); opacity: .5; transform: scale(.2);
+  animation: tap .5s var(--ease-out) forwards;
+}
+@keyframes tap { to { transform: scale(1); opacity: 0; } }
+.ring.drag { animation: drag-pulse 1s ease-in-out infinite; }
+@keyframes drag-pulse { 50% { box-shadow: var(--inset-sm), 0 0 0 8px rgba(229, 50, 45, .12); } }
+
+/* Teclado: la fila de teclas sube escalonada; los botones de clic vuelven igual. */
+.typing-on .keybar button { animation: rise .4s var(--spring) both; }
+.typing-on .keybar button:nth-child(2) { animation-delay: 25ms; }
+.typing-on .keybar button:nth-child(3) { animation-delay: 50ms; }
+.typing-on .keybar button:nth-child(4) { animation-delay: 75ms; }
+.typing-on .keybar button:nth-child(5) { animation-delay: 100ms; }
+.typing-on .keybar button:nth-child(6) { animation-delay: 125ms; }
+.typing-on .keybar button:nth-child(7) { animation-delay: 150ms; }
+.tiles { animation: rise .45s var(--ease-out) both; }
+.type-wrap { transition: box-shadow .25s; }
+.type-wrap:focus-within { box-shadow: var(--inset), 0 0 0 2px rgba(229, 50, 45, .25); }
+#ctrl[aria-pressed="true"] { animation: digit-pop .35s var(--spring); }
+
+/* ---------- Presentación ---------- */
+.laser-dot { transform: scale(.3); transition: opacity .15s, transform .3s var(--spring); }
+.laser-pad.on .laser-dot { transform: scale(1); animation: laser-glow 1.2s ease-in-out infinite; }
+@keyframes laser-glow { 50% { box-shadow: 0 0 0 11px rgba(229, 50, 45, .12), 0 0 22px rgba(229, 50, 45, .6); } }
+
+/* ---------- Ajustes ---------- */
+dialog[open] { animation: dialog-in .45s var(--spring); }
+dialog[open]::backdrop { animation: fade-in .3s var(--ease-out); }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(24px) scale(.94); } }
+@keyframes fade-in { from { opacity: 0; } }
+input[type="range"]::-webkit-slider-thumb { transition: transform .25s var(--spring); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: .01ms !important;
+  }
+}

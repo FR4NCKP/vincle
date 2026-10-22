@@ -1,5 +1,6 @@
 import { send } from './net'
 import { createStream, pointerGain } from './pad'
+import { replay } from './motion'
 
 /**
  * Modo presentación: pasar diapositivas con las teclas que mandan los presentadores
@@ -17,10 +18,12 @@ export function setupPresent(els: {
   let last = { x: 0, y: 0 }
 
   buttons.addEventListener('click', (e) => {
-    const key = (e.target as Element).closest<HTMLButtonElement>('button[data-key]')?.dataset.key
-    if (!key) return
+    const btn = (e.target as Element).closest<HTMLButtonElement>('button[data-key]')
+    const key = btn?.dataset.key
+    if (!btn || !key) return
     send({ event: 'key', payload: { key, ctrl: false } })
     navigator.vibrate?.(10)
+    if (btn.classList.contains('tile')) replay(btn, 'flash')
   })
 
   laserPad.addEventListener('pointerdown', (e) => {

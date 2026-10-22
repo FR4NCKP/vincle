@@ -19,7 +19,6 @@ import time
 import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
-from tkinter import messagebox
 
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 import httpx
@@ -31,7 +30,7 @@ from supabase import AsyncClientOptions, acreate_client
 from supabase_auth import AsyncSupportedStorage
 
 # Debe coincidir con la etiqueta de la versión en GitHub (v0.2.0); el workflow lo verifica.
-VERSION = "0.4.3"
+VERSION = "0.5.0"
 RELEASES_API = "https://api.github.com/repos/FR4NCKP/vincle/releases/latest"
 EXE_NAME = "Vincle.exe"
 
@@ -68,7 +67,7 @@ SPECIAL_KEYS = {
     "f5": Key.f5,
 }
 
-PAPER, INK, MUTED, ACCENT = "#E7EAF0", "#2F3542", "#868D9B", "#E5322D"
+PAPER, INK, MUTED, ACCENT, OK = "#E7EAF0", "#2F3542", "#868D9B", "#E5322D", "#34A86B"
 
 
 class FileStorage(AsyncSupportedStorage):
@@ -588,6 +587,97 @@ def monitor_of_active_window() -> tuple[int, int, int, int]:
     return r.left, r.top, r.right, r.bottom
 
 
+def animations_enabled() -> bool:
+    """Respeta "Mostrar animaciones en Windows" (Accesibilidad > Efectos visuales)."""
+    on = ctypes.c_bool(True)
+    try:
+        ctypes.windll.user32.SystemParametersInfoW(0x1042, 0, ctypes.byref(on), 0)  # SPI_GETCLIENTAREAANIMATION
+    except (AttributeError, OSError):
+        return True
+    return bool(on.value)
+
+
+ANIMATIONS = animations_enabled()
+
+
+def ease_out(t: float) -> float:
+    return 1 - (1 - t) ** 3
+
+
+def animate(root: tk.Misc, duration_s: float, step, done=None) -> None:
+    """Llama a step(t), con t suavizado de 0 a 1, unas 60 veces por segundo."""
+    if not ANIMATIONS:
+        step(1.0)
+        if done:
+            done()
+        return
+    start = time.perf_counter()
+
+    def frame() -> None:
+        t = min(1.0, (time.perf_counter() - start) / duration_s)
+        step(ease_out(t))
+        if t < 1:
+            root.after(16, frame)
+        elif done:
+            done()
+
+    frame()
+
+
+class AskDialog:
+    """Pregunta si se permite la conexión. Reemplaza al cuadro estándar de Windows para seguir
+    el diseño de la app. A propósito no tiene botón por defecto: un Enter que se escape
+    mientras alguien escribe en otro programa no debe dar el control de la PC."""
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.allow = False
+        top = self.top = tk.Toplevel(root, bg=PAPER, padx=28, pady=24)
+        top.title("Vincle")
+        top.resizable(False, False)
+        top.attributes("-topmost", True)
+        top.attributes("-alpha", 0.0)
+        top.transient(root)
+        tk.Label(top, text="¿Permitir esta conexión?", font=("Segoe UI Semibold", 15), bg=PAPER, fg=INK).pack(anchor="w")
+        tk.Label(
+            top, text="Un celular quiere controlar el mouse y el teclado de esta computadora.",
+            font=("Segoe UI", 10), bg=PAPER, fg=MUTED, wraplength=320, justify="left",
+        ).pack(anchor="w", pady=(6, 20))
+        row = tk.Frame(top, bg=PAPER)
+        row.pack(fill="x")
+        tk.Button(
+            row, text="Rechazar", command=self.close, font=("Segoe UI", 10), bg="#DCE1E8", fg=INK,
+            activebackground="#CDD3DC", relief="flat", padx=18, pady=8, cursor="hand2",
+        ).pack(side="left")
+        tk.Button(
+            row, text="Permitir", command=self.accept, font=("Segoe UI Semibold", 10), bg=INK, fg="white",
+            activebackground="#4B5260", activeforeground="white", relief="flat", padx=22, pady=8, cursor="hand2",
+        ).pack(side="right")
+        top.bind("<Escape>", lambda _e: self.close())
+        top.protocol("WM_DELETE_WINDOW", self.close)
+
+        # Aparece centrado sobre la ventana de Vincle, con un fundido y subiendo un poco.
+        top.update_idletasks()
+        w, h = top.winfo_reqwidth(), top.winfo_reqheight()
+        x = root.winfo_rootx() + (root.winfo_width() - w) // 2
+        y = root.winfo_rooty() + (root.winfo_height() - h) // 3
+        top.geometry(f"+{x}+{y + 16}")
+        animate(top, 0.3, lambda t: (top.attributes("-alpha", t), top.geometry(f"+{x}+{y + int(16 * (1 - t))}")))
+        top.grab_set()
+        top.focus_force()
+
+    def accept(self) -> None:
+        self.allow = True
+        self.close()
+
+    def close(self) -> None:
+        self.top.grab_release()
+        self.top.destroy()
+
+    def wait(self) -> bool:
+        self.top.wait_window()
+        return self.allow
+
+
 def overlay_window(root: tk.Tk, key: str) -> tk.Toplevel:
     """Ventana sin bordes, siempre encima de todo (también de una presentación a pantalla
     completa), con fondo transparente, que deja pasar los clics y no sale en la barra de tareas."""
@@ -632,10 +722,11 @@ class Laser:
         self.trail = tk.Canvas(self.trail_win, bg=self.KEY, highlightthickness=0)
         self.trail.pack(fill="both", expand=True)
         self.dot_win = overlay_window(root, self.KEY)
-        dot = tk.Canvas(self.dot_win, width=self.SIZE, height=self.SIZE, bg=self.KEY, highlightthickness=0)
-        dot.pack()
-        dot.create_oval(1, 1, self.SIZE - 1, self.SIZE - 1, fill="#FF8C87", outline="")  # halo
-        dot.create_oval(7, 7, self.SIZE - 7, self.SIZE - 7, fill=self.RED, outline="")  # centro
+        self.dot = tk.Canvas(self.dot_win, width=self.SIZE, height=self.SIZE, bg=self.KEY, highlightthickness=0)
+        self.dot.pack()
+        self.halo = self.dot.create_oval(1, 1, self.SIZE - 1, self.SIZE - 1, fill="#FF8C87", outline="")
+        self.core = self.dot.create_oval(7, 7, self.SIZE - 7, self.SIZE - 7, fill=self.RED, outline="")
+        self.anim_id = 0  # para que una animación vieja no pise a la nueva
         self.visible = False
         self.trail_shown = False
         self.points: list[tuple[float, float, float]] = []  # (momento, x, y) de los últimos 0,5 s
@@ -652,14 +743,35 @@ class Laser:
             self.trail_win.geometry(f"{right - left}x{bottom - top}+{left}+{top}")
             self.points.clear()
         self.place_dot()
+        self.scale_dot(0)
         self.dot_win.deiconify()
         self.dot_win.lift()
         self.visible = True
+        self.anim_id += 1
+        anim = self.anim_id
+        animate(self.dot, 0.18, lambda t: anim == self.anim_id and self.scale_dot(t))
 
     def hide(self) -> None:
-        # La estela que quedó se termina de desvanecer sola (ver tick).
-        self.dot_win.withdraw()
+        # El punto se encoge y la estela que quedó se termina de desvanecer sola (ver tick).
         self.visible = False
+        self.anim_id += 1
+        anim = self.anim_id
+
+        def shrink(t: float) -> None:
+            if anim == self.anim_id:
+                self.scale_dot(1 - t)
+
+        def gone() -> None:
+            if anim == self.anim_id:
+                self.dot_win.withdraw()
+
+        animate(self.dot, 0.15, shrink, gone)
+
+    def scale_dot(self, k: float) -> None:
+        c, s = self.SIZE / 2, self.SIZE / 2 - 1
+        self.dot.coords(self.halo, c - s * k, c - s * k, c + s * k, c + s * k)
+        r = (self.SIZE / 2 - 7) * k
+        self.dot.coords(self.core, c - r, c - r, c + r, c + r)
 
     def move(self, dx: float, dy: float) -> None:
         left, top, right, bottom = self.bounds
@@ -734,19 +846,29 @@ class Window:
         # Vista "esperando": QR + PIN.
         self.waiting = tk.Frame(self.root, bg=PAPER)
         self.eyebrow(self.waiting, "ESCANEA CON TU CELULAR").pack(anchor="w", pady=(18, 8))
-        self.qr = tk.Label(self.waiting, bg=PAPER)
+        self.qr = tk.Canvas(self.waiting, width=1, height=1, bg=PAPER, highlightthickness=0)
         self.qr.pack()
         self.eyebrow(self.waiting, "O ESCRIBE EL CÓDIGO").pack(anchor="w", pady=(18, 4))
-        self.pin = tk.Label(self.waiting, text="······", font=("Segoe UI Semibold", 40), bg=PAPER, fg=INK)
+        self.pin = tk.Label(self.waiting, text="··· ···", font=("Segoe UI Semibold", 40), bg=PAPER, fg=INK)
         self.pin.pack(anchor="w")
+        # Tiempo que le queda al código: una barra que se vacía (y el texto debajo).
+        self.bar = tk.Canvas(self.waiting, width=290, height=8, bg=PAPER, highlightthickness=0)
+        self.bar.pack(anchor="w", pady=(6, 4))
+        self.bar.create_line(4, 4, 286, 4, width=6, capstyle="round", fill="#D5DAE2")
+        self.bar_fill = self.bar.create_line(4, 4, 286, 4, width=6, capstyle="round", fill=ACCENT)
+        self.pin_total = 120.0
         self.countdown = tk.Label(self.waiting, text="", font=("Segoe UI", 10), bg=PAPER, fg=MUTED)
         self.countdown.pack(anchor="w")
 
         # Vista "conectado".
         self.linked = tk.Frame(self.root, bg=PAPER)
-        self.eyebrow(self.linked, "ESTADO").pack(anchor="w", pady=(18, 4))
-        self.linked_text = tk.Label(self.linked, text="", font=("Segoe UI Semibold", 22), bg=PAPER, fg=INK, justify="left")
-        self.linked_text.pack(anchor="w")
+        self.eyebrow(self.linked, "ESTADO").pack(anchor="w", pady=(18, 8))
+        row = tk.Frame(self.linked, bg=PAPER)
+        row.pack(anchor="w")
+        self.check = tk.Canvas(row, width=44, height=44, bg=PAPER, highlightthickness=0)
+        self.check.pack(side="left", padx=(0, 12))
+        self.linked_text = tk.Label(row, text="", font=("Segoe UI Semibold", 20), bg=PAPER, fg=INK, justify="left")
+        self.linked_text.pack(side="left")
         tk.Button(
             self.linked, text="Desconectar", command=self.disconnect, font=("Segoe UI", 11),
             bg=INK, fg="white", activebackground="#4B5260", activeforeground="white",
@@ -770,7 +892,10 @@ class Window:
     def run(self) -> None:
         self.link.start()
         self.root.after(50, self.poll)
-        self.root.after(1000, self.tick)
+        self.root.after(50, self.tick)
+        # La ventana aparece con un fundido.
+        self.root.attributes("-alpha", 0.0)
+        self.root.after(10, lambda: animate(self.root, 0.35, lambda t: self.root.attributes("-alpha", t)))
         self.root.mainloop()
 
     def poll(self) -> None:
@@ -781,9 +906,13 @@ class Window:
 
     def tick(self) -> None:
         if self.expires:
-            left = int((self.expires - datetime.now(timezone.utc)).total_seconds())
+            left_s = (self.expires - datetime.now(timezone.utc)).total_seconds()
+            left = int(left_s)
             self.countdown.config(text=f"Vence en {left // 60}:{left % 60:02d}" if left > 0 else "Generando otro código…")
-        self.root.after(1000, self.tick)
+            share = max(0.0, min(1.0, left_s / self.pin_total))
+            self.bar.coords(self.bar_fill, 4, 4, 4 + 282 * share, 4)
+            self.bar.itemconfigure(self.bar_fill, state="normal" if share > 0 else "hidden")
+        self.root.after(50, self.tick)  # seguido, para que la barra baje suave
 
     # ---------- Mensajes del hilo de red ----------
 
@@ -792,23 +921,68 @@ class Window:
         url = f"{APP_URL}#{pin}"
         png = segno.make(url, error="m").png_data_uri(scale=6, border=2, dark=INK, light=PAPER)
         self.qr_image = tk.PhotoImage(data=png.split(",", 1)[1])
-        self.qr.config(image=self.qr_image)
-        self.pin.config(text=f"{pin[:3]} {pin[3:]}")
+        self.pin_total = max(1.0, (expires - datetime.now(timezone.utc)).total_seconds())
         self.linked.pack_forget()
         self.waiting.pack(anchor="w")
+        self.reveal_qr()
+        self.reveal_pin(pin)
         self.retry.pack_forget()
         self.status.config(text="Esperando al celular…")
 
+    def reveal_qr(self) -> None:
+        """El QR aparece de arriba hacia abajo, como si se imprimiera."""
+        w, h = self.qr_image.width(), self.qr_image.height()
+        self.qr.config(width=w, height=h)
+        self.qr.delete("all")
+        self.qr.create_image(0, 0, image=self.qr_image, anchor="nw")
+        cover = self.qr.create_rectangle(0, 0, w, h, fill=PAPER, outline="")
+        edge = self.qr.create_line(0, 0, w, 0, fill=ACCENT, width=2)
+
+        def step(t: float) -> None:
+            y = h * t
+            self.qr.coords(cover, 0, y, w, h)
+            self.qr.coords(edge, 0, y, w, y)
+            if t >= 1:
+                self.qr.delete(cover, edge)
+
+        animate(self.qr, 0.6, step)
+
+    def reveal_pin(self, pin: str) -> None:
+        """Los dígitos aparecen uno tras otro."""
+        def step(t: float) -> None:
+            shown = pin[: round(6 * t)].ljust(6, "·")
+            self.pin.config(text=f"{shown[:3]} {shown[3:]}")
+
+        animate(self.pin, 0.45, step)
+
+    def draw_check(self, ok: bool) -> None:
+        """Círculo verde que crece y una marca de visto que se dibuja; gris si el celular se fue."""
+        c = self.check
+        c.delete("all")
+        if not ok:
+            c.create_oval(4, 4, 40, 40, outline=MUTED, width=2)
+            return
+        circle = c.create_oval(22, 22, 22, 22, fill=OK, outline="")
+        mark = c.create_line(13, 23, 13, 23, fill="white", width=4, capstyle="round", joinstyle="round")
+        pts = [(13, 23), (19, 29), (31, 16)]
+
+        def step(t: float) -> None:
+            r = 18 * min(1.0, t * 1.6)
+            c.coords(circle, 22 - r, 22 - r, 22 + r, 22 + r)
+            # El trazo empieza cuando el círculo ya creció: k va de 0 a 2 (dos tramos de la marca).
+            k = max(0.0, (t - 0.35) / 0.65) * 2
+            seg = min(1, int(k))
+            frac = min(1.0, k - seg)
+            (x0, y0), (x1, y1) = pts[seg], pts[seg + 1]
+            done = [v for p in pts[: seg + 1] for v in p]
+            c.coords(mark, *done, x0 + (x1 - x0) * frac, y0 + (y1 - y0) * frac)
+
+        animate(c, 0.5, step)
+
     def on_ask(self) -> None:
         self.root.deiconify()
-        self.root.attributes("-topmost", True)
         self.root.lift()
-        allow = messagebox.askyesno(
-            "Vincle",
-            "Un celular quiere controlar el mouse y el teclado de esta computadora.\n\n¿Permitir la conexión?",
-            parent=self.root,
-        )
-        self.root.attributes("-topmost", False)
+        allow = AskDialog(self.root).wait()
         self.link.call(self.link.answer(allow))
 
     def on_connected(self, guest_here: bool) -> None:
@@ -817,6 +991,7 @@ class Window:
         self.waiting.pack_forget()
         self.linked.pack(anchor="w")
         self.linked_text.config(text="Celular conectado" if guest_here else "El celular se\ndesconectó")
+        self.draw_check(guest_here)
         self.show_link_status()
 
     def on_direct(self, on: bool) -> None:

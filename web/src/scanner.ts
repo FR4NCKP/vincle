@@ -44,7 +44,8 @@ export async function startScanner(video: HTMLVideoElement, onPin: (pin: string)
     }
     const pin = text && pinFromQr(text)
     if (pin && !stopped) {
-      stop()
+      // Se deja de buscar, pero la cámara queda encendida para mostrar la animación de
+      // "detectado"; quien llamó la apaga con la función que devuelve startScanner.
       onPin(pin)
       return
     }

@@ -1,4 +1,5 @@
 import { isDirect, send } from './net'
+import { rippleAt } from './motion'
 
 // Supabase Free corta la conexión pasados 100 mensajes/s por proyecto, y cada Broadcast
 // cuenta como enviado + recibido: ~30 envíos/s deja margen. Por la conexión directa no hay
@@ -141,6 +142,7 @@ export function setupPad(surface: HTMLElement, ring: HTMLElement) {
       send({ event: 'drag', payload: { down: false } })
     } else if (isTap && performance.now() - downAt < TAP_MAX_MS) {
       send({ event: 'click', payload: { button: maxPointers >= 2 ? 'right' : 'left' } })
+      rippleAt(surface, e.clientX, e.clientY, 'tap') // el toque "marca" la superficie
     }
     ring.classList.add('idle')
   }

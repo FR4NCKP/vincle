@@ -38,6 +38,8 @@ En el celular no se instala nada: Vincle se abre en el navegador desde https://f
 7. Arriba se ve «Conexión directa» cuando el celular habla directo con la PC, o solo «Conectado» si va por Supabase.
 8. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
 
+La interfaz tiene animaciones en las dos partes (botones, cambio de pantalla, escaneo del QR, código, conexión, láser). Si el sistema tiene activado «reducir movimiento» (o en Windows, «Mostrar animaciones» apagado), se omiten.
+
 ## Configuración de Supabase
 
 El proyecto `vincle` ya está creado (plan Free, región `sa-east-1`, São Paulo) y la migración ya se aplicó. Si hay que recrearlo:
@@ -159,7 +161,7 @@ Quien maneja el teclado de una PC puede escribir comandos, así que la conexión
 - El PIN vence a los 2 minutos y deja de servir apenas alguien lo reclama.
 - Con 10 PIN equivocados en 10 minutos, el usuario queda bloqueado un rato.
 - El canal es privado y lo protegen políticas RLS: nadie fuera de la sala puede unirse, escuchar ni enviar.
-- Hasta que alguien acepta en la ventana de la PC, las órdenes se descartan.
+- Hasta que alguien acepta en la ventana de la PC, las órdenes se descartan. El aviso de permiso no tiene botón por defecto: hay que hacer clic en «Permitir», así un Enter escrito por accidente en otro programa no da el control.
 - Los movimientos tienen tope, el texto se corta a 2000 caracteres y los eventos desconocidos o mal formados se ignoran.
 
 Límite conocido: Windows no deja que un programa sin permisos de administrador controle ventanas que sí los tienen (por ejemplo, el aviso de UAC). En esas ventanas Vincle no funciona.
