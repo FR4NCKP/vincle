@@ -31,7 +31,7 @@ from supabase import AsyncClientOptions, acreate_client
 from supabase_auth import AsyncSupportedStorage
 
 # Debe coincidir con la etiqueta de la versión en GitHub (v0.2.0); el workflow lo verifica.
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 RELEASES_API = "https://api.github.com/repos/FR4NCKP/vincle/releases/latest"
 EXE_NAME = "Vincle.exe"
 
@@ -68,7 +68,7 @@ SPECIAL_KEYS = {
     "f5": Key.f5,
 }
 
-PAPER, INK, MUTED = "#F5F5F3", "#0A0A0A", "#5C5C5A"
+PAPER, INK, MUTED, ACCENT = "#E7EAF0", "#2F3542", "#868D9B", "#E5322D"
 
 
 class FileStorage(AsyncSupportedStorage):
@@ -708,8 +708,8 @@ class Window:
         self.guest_here = False
         self.direct = False
 
-        serif = ("Georgia", 54, "italic")
-        self.title = tk.Label(self.root, text="Vincle", font=serif, bg=PAPER, fg=INK)
+        serif = ("Segoe UI Semibold", 34)
+        self.title = tk.Label(self.root, text="Vincle", font=serif, bg=PAPER, fg=ACCENT)
         self.title.pack(anchor="w")
 
         # Aviso de versión nueva (oculto hasta que la haya).
@@ -730,7 +730,7 @@ class Window:
         self.qr = tk.Label(self.waiting, bg=PAPER)
         self.qr.pack()
         self.eyebrow(self.waiting, "O ESCRIBE EL CÓDIGO").pack(anchor="w", pady=(18, 4))
-        self.pin = tk.Label(self.waiting, text="······", font=("Georgia", 44), bg=PAPER, fg=INK)
+        self.pin = tk.Label(self.waiting, text="······", font=("Segoe UI Semibold", 40), bg=PAPER, fg=INK)
         self.pin.pack(anchor="w")
         self.countdown = tk.Label(self.waiting, text="", font=("Segoe UI", 10), bg=PAPER, fg=MUTED)
         self.countdown.pack(anchor="w")
@@ -738,11 +738,11 @@ class Window:
         # Vista "conectado".
         self.linked = tk.Frame(self.root, bg=PAPER)
         self.eyebrow(self.linked, "ESTADO").pack(anchor="w", pady=(18, 4))
-        self.linked_text = tk.Label(self.linked, text="", font=("Georgia", 26), bg=PAPER, fg=INK, justify="left")
+        self.linked_text = tk.Label(self.linked, text="", font=("Segoe UI Semibold", 22), bg=PAPER, fg=INK, justify="left")
         self.linked_text.pack(anchor="w")
         tk.Button(
             self.linked, text="Desconectar", command=self.disconnect, font=("Segoe UI", 11),
-            bg=INK, fg="white", activebackground="#3A3A38", activeforeground="white",
+            bg=INK, fg="white", activebackground="#4B5260", activeforeground="white",
             relief="flat", padx=18, pady=10, cursor="hand2",
         ).pack(anchor="w", pady=(24, 0))
 

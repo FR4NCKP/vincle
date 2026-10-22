@@ -1,1 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#F5F5F3"/><path fill="#0A0A0A" d="M307 20C384 10 466 56 486 143C507 230 435 266 451 353C466 440 384 507 287 497C189 486 159 430 92 410C26 389 5 302 31 225C56 148 26 87 102 46C179 5 230 31 307 20Z"/><text x="256" y="330" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="250" fill="#F5F5F3">V</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <filter id="r" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="-14" dy="-14" stdDeviation="14" flood-color="#FFFFFF"/>
+      <feDropShadow dx="14" dy="14" stdDeviation="14" flood-color="#BCC3CF"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="#E7EAF0"/>
+  <circle cx="256" cy="256" r="168" fill="#E7EAF0" filter="url(#r)"/>
+  <text x="256" y="322" text-anchor="middle" font-family="Poppins, 'Segoe UI', Arial, sans-serif" font-weight="600" font-size="190" fill="#E5322D">V</text>
+</svg>

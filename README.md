@@ -35,7 +35,7 @@ En el celular no se instala nada: Vincle se abre en el navegador desde https://f
    - **Iniciar presentación** manda F5 y **Salir** manda Esc
    - en la zona **Láser**, mientras mantienes el dedo y lo mueves, aparece un punto rojo en la pantalla de la PC donde está la presentación (también en un proyector), con una estela que se desvanece en medio segundo. Al soltar el punto se oculta y, al volver a tocar, sigue desde donde quedó. No mueve el mouse ni hace clic
    - mientras estás en esta pantalla, el celular no se apaga solo
-7. Arriba se ve «Conectado · directo» cuando el celular habla directo con la PC, o solo «Conectado» si va por Supabase.
+7. Arriba se ve «Conexión directa» cuando el celular habla directo con la PC, o solo «Conectado» si va por Supabase.
 8. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
 
 ## Configuración de Supabase

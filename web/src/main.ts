@@ -48,7 +48,7 @@ function setStatus(state: LinkState) {
   }
   const name = room?.name ?? 'la computadora'
   const text =
-    state === 'direct' ? 'Conectado · directo'
+    state === 'direct' ? 'Conexión directa'
     : state === 'connected' ? 'Conectado'
     : state === 'waiting' ? `Acepta en ${name}`
     : state === 'host-away' ? `${name} no está en línea`
