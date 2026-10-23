@@ -125,37 +125,53 @@ const deviceName = describeDevice()
 // ---------- Latencia ----------
 // Cada tanto se manda la hora a la PC y ella la devuelve: la diferencia es la ida y vuelta.
 // Por Supabase se mide con menos frecuencia, porque cada mensaje cuenta para la cuota mensual.
+//
+// Lo que interesa es cuánto tarda el cursor, así que la cifra se toma mientras se usa el
+// control: en reposo el celular apaga la antena Wi-Fi entre envíos para ahorrar batería y la
+// ida y vuelta sale más alta de lo que se siente al mover el dedo. En reposo solo se mide
+// para saber que la PC sigue respondiendo.
 
-const PING_DIRECT_MS = 2000
+const PING_ACTIVE_MS = 500 // conexión directa, mientras se usa
+const PING_IDLE_MS = 2000 // conexión directa, en reposo
 const PING_CLOUD_MS = 5000
+const ACTIVE_WINDOW_MS = 1500 // se considera "en uso" hasta 1,5 s después del último envío
 
 let pingTimer = 0
 let smoothRtt: number | null = null
 let lastPong = 0
+let lastActivity = -Infinity
 let onLatency: (ms: number | null) => void = () => {}
+
+const inUse = () => performance.now() - lastActivity < ACTIVE_WINDOW_MS
 
 function gotPong(sent: unknown) {
   if (typeof sent !== 'number') return
   const rtt = performance.now() - sent
   if (rtt < 0 || rtt > 10_000) return
-  smoothRtt = smoothRtt === null ? rtt : smoothRtt * 0.6 + rtt * 0.4
   lastPong = performance.now()
+  // Una medición en reposo solo cuenta si todavía no hay ninguna.
+  const tookInUse = lastActivity > sent - ACTIVE_WINDOW_MS
+  if (!tookInUse && smoothRtt !== null) return
+  smoothRtt = smoothRtt === null ? rtt : smoothRtt * 0.7 + rtt * 0.3
   onLatency(Math.round(smoothRtt))
 }
 
 function ping(ch: RealtimeChannel) {
   clearTimeout(pingTimer)
   const direct = isDirect()
-  const every = direct ? PING_DIRECT_MS : PING_CLOUD_MS
+  const every = !direct ? PING_CLOUD_MS : inUse() ? PING_ACTIVE_MS : PING_IDLE_MS
   pingTimer = window.setTimeout(() => ping(ch), every)
   if (ch !== channel || !live || !accepted || document.visibilityState !== 'visible') return
   // Sin respuesta (la PC no está o es una versión sin medición): no se muestra ningún valor.
-  if (performance.now() - lastPong > every * 2.5) {
+  // Se mide contra el intervalo de reposo, porque por el canal rápido alguna puede perderse.
+  if (performance.now() - lastPong > (direct ? PING_IDLE_MS : PING_CLOUD_MS) * 2.5) {
     smoothRtt = null
     onLatency(null)
   }
   const payload = { t: performance.now() }
-  if (direct) sure!.send(JSON.stringify({ event: 'ping', payload }))
+  // Por el canal rápido: si se pierde un paquete no se espera su reenvío (como el cursor),
+  // así la cifra no marca picos que el cursor no tiene.
+  if (direct) fast!.send(JSON.stringify({ event: 'ping', payload }))
   else void ch.send({ type: 'broadcast', event: 'ping', payload })
 }
 
@@ -335,6 +351,15 @@ export function send(msg: Outgoing) {
   }
   // Sin permiso de la PC no se envía nada: la PC lo descartaría y gastaría cuota.
   if (!accepted) return
+  // Al empezar a usar el control tras un rato quieto, se mide enseguida (con la antena ya
+  // despierta) en vez de esperar al próximo turno de reposo.
+  const wasIdle = !inUse()
+  lastActivity = performance.now()
+  if (wasIdle && isDirect()) {
+    const ch = channel
+    clearTimeout(pingTimer)
+    pingTimer = window.setTimeout(() => ping(ch), 50)
+  }
   if (isDirect()) {
     const continuous = msg.event === 'move' || msg.event === 'scroll' || msg.event === 'laser_move'
     const dc = continuous ? fast! : sure!
