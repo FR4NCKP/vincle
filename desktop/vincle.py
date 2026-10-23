@@ -17,12 +17,15 @@ import sys
 import threading
 import time
 import tkinter as tk
+import winreg
 from datetime import datetime, timezone
 from pathlib import Path
 
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 import httpx
+import pystray
 import segno
+from PIL import Image
 from pynput.keyboard import Controller as Keyboard, Key, KeyCode
 from pynput.mouse import Button, Controller as Mouse
 from realtime import RealtimeSubscribeStates
@@ -30,7 +33,7 @@ from supabase import AsyncClientOptions, acreate_client
 from supabase_auth import AsyncSupportedStorage
 
 # Debe coincidir con la etiqueta de la versión en GitHub (v0.2.0); el workflow lo verifica.
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 RELEASES_API = "https://api.github.com/repos/FR4NCKP/vincle/releases/latest"
 EXE_NAME = "Vincle.exe"
 
@@ -65,9 +68,116 @@ SPECIAL_KEYS = {
     "pagedown": Key.page_down,
     "pageup": Key.page_up,
     "f5": Key.f5,
+    # Multimedia.
+    "play": Key.media_play_pause,
+    "next": Key.media_next,
+    "prev": Key.media_previous,
+    "volup": Key.media_volume_up,
+    "voldown": Key.media_volume_down,
+    "mute": Key.media_volume_mute,
+}
+# Gestos de tres dedos, como en el trackpad de Windows.
+GESTURES = {
+    "right": (Key.alt, Key.tab),  # cambiar a la ventana siguiente
+    "left": (Key.alt, Key.shift, Key.tab),  # y a la anterior
+    "up": (Key.cmd, Key.tab),  # vista de tareas
+    "down": (Key.cmd, "d"),  # mostrar el escritorio
+}
+MAX_NAME = 40
+
+def windows_spanish() -> bool:
+    """El idioma de la interfaz de Windows decide el de Vincle: español o, si no, inglés."""
+    try:
+        return ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x0A  # LANG_SPANISH
+    except (AttributeError, OSError):
+        return True
+
+
+def windows_dark() -> bool:
+    """Tema de las apps de Windows (Configuración > Personalización > Colores)."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+            return winreg.QueryValueEx(k, "AppsUseLightTheme")[0] == 0
+    except OSError:
+        return False
+
+
+LANG = "es" if windows_spanish() else "en"
+TEXTS = {
+    "es": {
+        "scan": "ESCANEA CON TU CELULAR", "or_code": "O ESCRIBE EL CÓDIGO", "expires": "Vence en {m}:{s:02d}",
+        "new_code": "Generando otro código…", "state": "ESTADO", "device": "Un dispositivo",
+        "connected": "{name} conectado", "gone": "El dispositivo se\ndesconectó", "disconnect": "Desconectar",
+        "connecting": "Conectando con el servidor…", "reconnecting": "Reconectando con el servidor…",
+        "version": "Versión {v}", "retry": "Reintentar", "waiting": "Esperando al celular…",
+        "error": "No se pudo conectar con el servidor.\n{e}",
+        "st_away": "Se reconectará solo al volver a abrir Vincle en el celular.",
+        "st_direct": "Conexión directa: el cursor responde al instante.",
+        "st_cloud": "Conectado por internet (Supabase). Si están en la misma red Wi-Fi, se pasará solo a conexión directa.",
+        "st_trusted": "Dispositivo de confianza: se conectó sin pedir permiso.",
+        "update_new": "Hay una versión nueva ({tag}).", "update_btn": "Actualizar",
+        "downloading": "Descargando la versión nueva…",
+        "update_failed": "No se pudo actualizar. También puedes descargarla desde la página de Vincle.",
+        "ask_title": "¿Permitir esta conexión?",
+        "ask_body": "{name} quiere controlar el mouse y el teclado de esta computadora.",
+        "ask_remember": "Recordar este dispositivo: la próxima vez se conectará solo",
+        "reject": "Rechazar", "allow": "Permitir",
+        "trusted_link": "Dispositivos de confianza ({n})", "trusted_title": "Dispositivos de confianza",
+        "trusted_empty": "Todavía no hay dispositivos de confianza. Marca «Recordar este dispositivo» al permitir una conexión.",
+        "forget": "Olvidar", "close": "Cerrar",
+        "tray_open": "Abrir Vincle", "tray_autostart": "Iniciar con Windows", "tray_quit": "Salir",
+        "tray_hint": "Vincle sigue abierto en la bandeja del sistema, junto al reloj.",
+    },
+    "en": {
+        "scan": "SCAN WITH YOUR PHONE", "or_code": "OR TYPE THE CODE", "expires": "Expires in {m}:{s:02d}",
+        "new_code": "Generating a new code…", "state": "STATUS", "device": "A device",
+        "connected": "{name} connected", "gone": "The device\ndisconnected", "disconnect": "Disconnect",
+        "connecting": "Connecting to the server…", "reconnecting": "Reconnecting to the server…",
+        "version": "Version {v}", "retry": "Retry", "waiting": "Waiting for your phone…",
+        "error": "Couldn't reach the server.\n{e}",
+        "st_away": "It will reconnect when you open Vincle on your phone again.",
+        "st_direct": "Direct connection: the cursor responds instantly.",
+        "st_cloud": "Connected over the internet (Supabase). On the same Wi-Fi it switches to a direct connection.",
+        "st_trusted": "Trusted device: connected without asking.",
+        "update_new": "A new version is available ({tag}).", "update_btn": "Update",
+        "downloading": "Downloading the new version…",
+        "update_failed": "Update failed. You can also download it from the Vincle page.",
+        "ask_title": "Allow this connection?",
+        "ask_body": "{name} wants to control this computer's mouse and keyboard.",
+        "ask_remember": "Remember this device: next time it will connect automatically",
+        "reject": "Reject", "allow": "Allow",
+        "trusted_link": "Trusted devices ({n})", "trusted_title": "Trusted devices",
+        "trusted_empty": "No trusted devices yet. Tick “Remember this device” when you allow a connection.",
+        "forget": "Forget", "close": "Close",
+        "tray_open": "Open Vincle", "tray_autostart": "Start with Windows", "tray_quit": "Quit",
+        "tray_hint": "Vincle keeps running in the system tray, next to the clock.",
+    },
 }
 
-PAPER, INK, MUTED, ACCENT, OK = "#E7EAF0", "#2F3542", "#868D9B", "#E5322D", "#34A86B"
+
+def tr(key: str, **kw) -> str:
+    return TEXTS[LANG][key].format(**kw)
+
+
+# Colores del tema claro y del oscuro (el oscuro sigue el de las apps de Windows).
+DARK = windows_dark()
+if DARK:
+    PAPER, INK, MUTED = "#23272F", "#E7EAF0", "#8D95A3"
+    BTN_BG, BTN_FG, BTN_ACTIVE = "#E7EAF0", "#23272F", "#C3C8D1"
+    SOFT, SOFT_ACTIVE, TRACK = "#323843", "#3B4250", "#3B4250"
+else:
+    PAPER, INK, MUTED = "#E7EAF0", "#2F3542", "#868D9B"
+    BTN_BG, BTN_FG, BTN_ACTIVE = "#2F3542", "#FFFFFF", "#4B5260"
+    SOFT, SOFT_ACTIVE, TRACK = "#DCE1E8", "#CDD3DC", "#D5DAE2"
+ACCENT, OK = "#E5322D", "#34A86B"
+# El QR siempre oscuro sobre claro: varios lectores no reconocen el invertido.
+QR_DARK, QR_LIGHT = "#2F3542", "#E7EAF0"
+
+
+def clean_name(value) -> str:
+    """Nombre del dispositivo que manda el celular: texto corto y sin saltos de línea."""
+    text = " ".join(str(value or "").split())[:MAX_NAME]
+    return text or tr("device")
 
 
 class FileStorage(AsyncSupportedStorage):
@@ -163,6 +273,30 @@ def remove_old_exe() -> None:
     ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)  # SHCNE_ASSOCCHANGED
 
 
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def autostart_enabled() -> bool:
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            winreg.QueryValueEx(k, "Vincle")
+        return True
+    except OSError:
+        return False
+
+
+def set_autostart(on: bool) -> None:
+    """Inicia Vincle con Windows (minimizado en la bandeja). Solo tiene sentido con el .exe."""
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+        if on:
+            winreg.SetValueEx(k, "Vincle", 0, winreg.REG_SZ, f'"{sys.executable}" --tray')
+        else:
+            try:
+                winreg.DeleteValue(k, "Vincle")
+            except FileNotFoundError:
+                pass
+
+
 class Smoother:
     """Mueve el cursor en pasos pequeños en vez de a saltos.
 
@@ -256,6 +390,7 @@ class Link:
         self.peer: RTCPeerConnection | None = None
         self.laser_lock = threading.Lock()
         self.laser_delta = [0, 0]
+        self.guest_name = ""
 
     # ---------- Hilo y llamadas desde la ventana ----------
 
@@ -309,7 +444,9 @@ class Link:
             await self.client.realtime.set_auth(session.access_token)
             await self.new_room()
         except Exception as exc:  # noqa: BLE001 — cualquier fallo se muestra y se puede reintentar
-            self.ui.put(("error", f"No se pudo conectar con el servidor.\n{exc}"))
+            self.ui.put(("error", tr("error", e=exc)))
+            return
+        await self.list_trusted()
 
     async def new_room(self) -> None:
         """Crea una sala nueva (y con ella un PIN nuevo), descartando la anterior."""
@@ -324,9 +461,10 @@ class Link:
             f"room:{self.room_id}",
             {"config": {"private": True, "presence": {"key": "host"}}},
         )
-        ch.on_broadcast("hello", lambda _m: self.on_hello())
+        ch.on_broadcast("hello", lambda m: self.on_hello(m.get("payload") or {}))
+        ch.on_broadcast("ping", lambda m: asyncio.ensure_future(self.on_ping(m.get("payload") or {})))
         ch.on_broadcast("rtc-offer", lambda m: asyncio.ensure_future(self.on_rtc_offer(m.get("payload") or {})))
-        for event in ("move", "scroll", "click", "drag", "text", "key", "laser", "laser_move"):
+        for event in ("move", "scroll", "click", "drag", "text", "key", "laser", "laser_move", "zoom", "gesture"):
             ch.on_broadcast(event, self.on_input)
         ch.on_presence_sync(self.on_presence)
         self.channel = ch
@@ -370,19 +508,20 @@ class Link:
         if state == RealtimeSubscribeStates.SUBSCRIBED:
             asyncio.ensure_future(self.channel.track({"role": "host"}))
         elif err:
-            self.ui.put(("status", "Reconectando con el servidor…"))
+            self.ui.put(("status", tr("reconnecting")))
 
     def on_presence(self) -> None:
         guest_here = "guest" in self.channel.presence_state()
         if self.accepted:
-            self.ui.put(("connected", guest_here))
+            self.ui.put(("connected", guest_here, self.guest_name))
         if not guest_here:
             self.ui.put(("laser", False))
 
     # ---------- Permiso ----------
 
-    def on_hello(self) -> None:
+    def on_hello(self, payload: dict) -> None:
         """El celular entró (o volvió a entrar) al canal; su numeración empieza de nuevo."""
+        self.guest_name = clean_name(payload.get("name"))
         self.reset_order()
         asyncio.ensure_future(self.close_peer())  # el celular negociará una conexión directa nueva
         if self.accepted:
@@ -393,17 +532,58 @@ class Link:
                 self.refresh_handle.cancel()
                 self.refresh_handle = None
             asyncio.ensure_future(self.channel.send_broadcast("status", {"state": "pending"}))
-            self.ui.put(("ask",))
+            asyncio.ensure_future(self.ask_or_trust())
 
-    async def answer(self, allow: bool) -> None:
+    async def ask_or_trust(self) -> None:
+        """Si el dispositivo es de confianza (lo decide la base de datos, no lo que diga el
+        celular), se acepta sin preguntar; si no, se pide permiso en la PC."""
+        try:
+            trusted = (await self.client.rpc("room_guest_trusted", {"p_room": self.room_id}).execute()).data is True
+        except Exception:  # noqa: BLE001 — ante la duda, se pregunta
+            trusted = False
+        if trusted:
+            await self.answer(True)
+            self.ui.put(("status", tr("st_trusted")))
+        else:
+            self.ui.put(("ask", self.guest_name))
+
+    async def answer(self, allow: bool, remember: bool = False) -> None:
         self.asking = False
         if allow:
             self.accepted = True
             await self.channel.send_broadcast("status", {"state": "accepted"})
-            self.ui.put(("connected", True))
+            self.ui.put(("connected", True, self.guest_name))
+            if remember:
+                try:
+                    await self.client.rpc("trust_guest", {"p_room": self.room_id, "p_guest_name": self.guest_name}).execute()
+                except Exception:  # noqa: BLE001 — si no se pudo recordar, se pedirá permiso otra vez
+                    pass
+                await self.list_trusted()
         else:
             await self.channel.send_broadcast("status", {"state": "rejected"})
             await self.new_room()
+
+    async def list_trusted(self) -> None:
+        try:
+            res = await self.client.table("trusted_devices").select("guest_id,guest_name").order("created_at").execute()
+            self.ui.put(("trusted", res.data or []))
+        except Exception:  # noqa: BLE001 — la lista es informativa
+            pass
+
+    async def forget(self, guest_id: str) -> None:
+        try:
+            await self.client.table("trusted_devices").delete().eq("guest_id", guest_id).execute()
+        except Exception:  # noqa: BLE001
+            pass
+        await self.list_trusted()
+
+    # ---------- Latencia ----------
+
+    async def on_ping(self, payload: dict) -> None:
+        """El celular mide cuánto tarda la ida y vuelta: se le devuelve su marca de tiempo."""
+        t = payload.get("t")
+        if self.accepted and isinstance(t, (int, float)) and self.channel is not None:
+            await self.channel.send_broadcast("pong", {"t": t})
 
     # ---------- Conexión directa (WebRTC) ----------
 
@@ -431,9 +611,15 @@ class Link:
                     message = json.loads(data)
                 except ValueError:
                     return
-                if isinstance(message, dict):
-                    # Llega en orden ("sure") o es movimiento ("fast"): no hace falta numerar.
-                    self.run(message)
+                if not isinstance(message, dict):
+                    return
+                if message.get("event") == "ping":
+                    t = (message.get("payload") or {}).get("t")
+                    if isinstance(t, (int, float)):
+                        dc.send(json.dumps({"event": "pong", "payload": {"t": t}}))
+                    return
+                # Llega en orden ("sure") o es movimiento ("fast"): no hace falta numerar.
+                self.run(message)
 
         @pc.on("connectionstatechange")
         async def on_state() -> None:
@@ -521,7 +707,28 @@ class Link:
             self.mouse.scroll(sx, sy)
 
     def do_click(self, d: dict) -> None:
-        self.mouse.click(Button.right if d["button"] == "right" else Button.left)
+        button = {"right": Button.right, "middle": Button.middle}.get(d["button"], Button.left)
+        self.mouse.click(button)
+
+    def do_zoom(self, d: dict) -> None:
+        """Pellizco: Ctrl + rueda, que es el zoom en navegadores, documentos e imágenes."""
+        steps = max(-10, min(10, int(d["steps"])))
+        if steps:
+            with self.keyboard.pressed(Key.ctrl):
+                self.mouse.scroll(0, steps)
+
+    def do_gesture(self, d: dict) -> None:
+        keys = GESTURES.get(str(d["name"]))
+        if not keys:
+            return
+        *mods, last = keys
+        for k in mods:
+            self.keyboard.press(k)
+        try:
+            self.keyboard.tap(KeyCode.from_char(last) if isinstance(last, str) else last)
+        finally:
+            for k in reversed(mods):
+                self.keyboard.release(k)
 
     def do_drag(self, d: dict) -> None:
         if d["down"] and not self.dragging:
@@ -624,34 +831,59 @@ def animate(root: tk.Misc, duration_s: float, step, done=None) -> None:
     frame()
 
 
+def match_title_bar(win: tk.Misc) -> None:
+    """En tema oscuro, la barra de título de Windows también se pone oscura."""
+    if not DARK:
+        return
+    try:
+        win.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+        on = ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(on), ctypes.sizeof(on))  # DWMWA_USE_IMMERSIVE_DARK_MODE
+    except (AttributeError, OSError):
+        pass
+
+
+def soft_button(parent, text, command, **kw) -> tk.Button:
+    return tk.Button(parent, text=text, command=command, font=("Segoe UI", 10), bg=SOFT, fg=INK,
+                     activebackground=SOFT_ACTIVE, activeforeground=INK, relief="flat", padx=18, pady=8,
+                     cursor="hand2", **kw)
+
+
+def main_button(parent, text, command, font=("Segoe UI Semibold", 10), **kw) -> tk.Button:
+    return tk.Button(parent, text=text, command=command, font=font, bg=BTN_BG, fg=BTN_FG,
+                     activebackground=BTN_ACTIVE, activeforeground=BTN_FG, relief="flat", cursor="hand2", **kw)
+
+
 class AskDialog:
     """Pregunta si se permite la conexión. Reemplaza al cuadro estándar de Windows para seguir
     el diseño de la app. A propósito no tiene botón por defecto: un Enter que se escape
     mientras alguien escribe en otro programa no debe dar el control de la PC."""
 
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: tk.Tk, name: str) -> None:
         self.allow = False
+        self.remember = tk.BooleanVar(value=False)
         top = self.top = tk.Toplevel(root, bg=PAPER, padx=28, pady=24)
         top.title("Vincle")
         top.resizable(False, False)
         top.attributes("-topmost", True)
         top.attributes("-alpha", 0.0)
         top.transient(root)
-        tk.Label(top, text="¿Permitir esta conexión?", font=("Segoe UI Semibold", 15), bg=PAPER, fg=INK).pack(anchor="w")
+        match_title_bar(top)
+        tk.Label(top, text=tr("ask_title"), font=("Segoe UI Semibold", 15), bg=PAPER, fg=INK).pack(anchor="w")
         tk.Label(
-            top, text="Un celular quiere controlar el mouse y el teclado de esta computadora.",
-            font=("Segoe UI", 10), bg=PAPER, fg=MUTED, wraplength=320, justify="left",
-        ).pack(anchor="w", pady=(6, 20))
+            top, text=tr("ask_body", name=name), font=("Segoe UI", 10), bg=PAPER, fg=MUTED,
+            wraplength=320, justify="left",
+        ).pack(anchor="w", pady=(6, 14))
+        tk.Checkbutton(
+            top, text=tr("ask_remember"), variable=self.remember, font=("Segoe UI", 9), bg=PAPER, fg=INK,
+            activebackground=PAPER, activeforeground=INK, selectcolor=SOFT, wraplength=300, justify="left",
+            cursor="hand2",
+        ).pack(anchor="w", pady=(0, 18))
         row = tk.Frame(top, bg=PAPER)
         row.pack(fill="x")
-        tk.Button(
-            row, text="Rechazar", command=self.close, font=("Segoe UI", 10), bg="#DCE1E8", fg=INK,
-            activebackground="#CDD3DC", relief="flat", padx=18, pady=8, cursor="hand2",
-        ).pack(side="left")
-        tk.Button(
-            row, text="Permitir", command=self.accept, font=("Segoe UI Semibold", 10), bg=INK, fg="white",
-            activebackground="#4B5260", activeforeground="white", relief="flat", padx=22, pady=8, cursor="hand2",
-        ).pack(side="right")
+        soft_button(row, tr("reject"), self.close).pack(side="left")
+        main_button(row, tr("allow"), self.accept, padx=22, pady=8).pack(side="right")
         top.bind("<Escape>", lambda _e: self.close())
         top.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -673,9 +905,9 @@ class AskDialog:
         self.top.grab_release()
         self.top.destroy()
 
-    def wait(self) -> bool:
+    def wait(self) -> tuple[bool, bool]:
         self.top.wait_window()
-        return self.allow
+        return self.allow, self.allow and self.remember.get()
 
 
 def overlay_window(root: tk.Tk, key: str) -> tk.Toplevel:
@@ -825,7 +1057,12 @@ class Window:
         self.laser_ticking = False
         self.expires: datetime | None = None
         self.guest_here = False
+        self.guest_name = ""
         self.direct = False
+        self.trusted: list[dict] = []
+        self.trusted_win: tk.Toplevel | None = None
+        self.hint_shown = False
+        self.tray = self.make_tray()
 
         serif = ("Segoe UI Semibold", 34)
         self.title = tk.Label(self.root, text="Vincle", font=serif, bg=PAPER, fg=ACCENT)
@@ -833,28 +1070,28 @@ class Window:
 
         # Aviso de versión nueva (oculto hasta que la haya).
         self.update_asset: dict | None = None
-        self.update_bar = tk.Frame(self.root, bg=INK, padx=12, pady=8)
-        self.update_text = tk.Label(self.update_bar, text="", font=("Segoe UI", 10), bg=INK, fg="white",
+        self.update_bar = tk.Frame(self.root, bg=BTN_BG, padx=12, pady=8)
+        self.update_text = tk.Label(self.update_bar, text="", font=("Segoe UI", 10), bg=BTN_BG, fg=BTN_FG,
                                     justify="left", wraplength=190)
         self.update_text.pack(side="left")
         self.update_btn = tk.Button(
-            self.update_bar, text="Actualizar", command=self.start_update, font=("Segoe UI", 10),
-            bg=PAPER, fg=INK, activebackground="white", relief="flat", padx=12, pady=4, cursor="hand2",
+            self.update_bar, text=tr("update_btn"), command=self.start_update, font=("Segoe UI", 10),
+            bg=PAPER, fg=INK, activebackground=SOFT_ACTIVE, relief="flat", padx=12, pady=4, cursor="hand2",
         )
         self.update_btn.pack(side="right")
 
         # Vista "esperando": QR + PIN.
         self.waiting = tk.Frame(self.root, bg=PAPER)
-        self.eyebrow(self.waiting, "ESCANEA CON TU CELULAR").pack(anchor="w", pady=(18, 8))
+        self.eyebrow(self.waiting, tr("scan")).pack(anchor="w", pady=(18, 8))
         self.qr = tk.Canvas(self.waiting, width=1, height=1, bg=PAPER, highlightthickness=0)
         self.qr.pack()
-        self.eyebrow(self.waiting, "O ESCRIBE EL CÓDIGO").pack(anchor="w", pady=(18, 4))
+        self.eyebrow(self.waiting, tr("or_code")).pack(anchor="w", pady=(18, 4))
         self.pin = tk.Label(self.waiting, text="··· ···", font=("Segoe UI Semibold", 40), bg=PAPER, fg=INK)
         self.pin.pack(anchor="w")
         # Tiempo que le queda al código: una barra que se vacía (y el texto debajo).
         self.bar = tk.Canvas(self.waiting, width=290, height=8, bg=PAPER, highlightthickness=0)
         self.bar.pack(anchor="w", pady=(6, 4))
-        self.bar.create_line(4, 4, 286, 4, width=6, capstyle="round", fill="#D5DAE2")
+        self.bar.create_line(4, 4, 286, 4, width=6, capstyle="round", fill=TRACK)
         self.bar_fill = self.bar.create_line(4, 4, 286, 4, width=6, capstyle="round", fill=ACCENT)
         self.pin_total = 120.0
         self.countdown = tk.Label(self.waiting, text="", font=("Segoe UI", 10), bg=PAPER, fg=MUTED)
@@ -862,40 +1099,83 @@ class Window:
 
         # Vista "conectado".
         self.linked = tk.Frame(self.root, bg=PAPER)
-        self.eyebrow(self.linked, "ESTADO").pack(anchor="w", pady=(18, 8))
+        self.eyebrow(self.linked, tr("state")).pack(anchor="w", pady=(18, 8))
         row = tk.Frame(self.linked, bg=PAPER)
         row.pack(anchor="w")
         self.check = tk.Canvas(row, width=44, height=44, bg=PAPER, highlightthickness=0)
         self.check.pack(side="left", padx=(0, 12))
         self.linked_text = tk.Label(row, text="", font=("Segoe UI Semibold", 20), bg=PAPER, fg=INK, justify="left")
         self.linked_text.pack(side="left")
-        tk.Button(
-            self.linked, text="Desconectar", command=self.disconnect, font=("Segoe UI", 11),
-            bg=INK, fg="white", activebackground="#4B5260", activeforeground="white",
-            relief="flat", padx=18, pady=10, cursor="hand2",
-        ).pack(anchor="w", pady=(24, 0))
+        main_button(self.linked, tr("disconnect"), self.disconnect, font=("Segoe UI", 11),
+                    padx=18, pady=10).pack(anchor="w", pady=(24, 0))
 
-        self.status = tk.Label(self.root, text="Conectando con el servidor…", font=("Segoe UI", 10),
+        self.status = tk.Label(self.root, text=tr("connecting"), font=("Segoe UI", 10),
                                bg=PAPER, fg=MUTED, justify="left", wraplength=300)
-        tk.Label(self.root, text=f"Versión {VERSION}", font=("Segoe UI", 8), bg=PAPER, fg=MUTED).pack(
+        tk.Label(self.root, text=tr("version", v=VERSION), font=("Segoe UI", 8), bg=PAPER, fg=MUTED).pack(
             anchor="w", side="bottom", pady=(6, 0))
+        # Enlace a la lista de dispositivos de confianza (solo si hay alguno).
+        self.trusted_link = tk.Label(self.root, text="", font=("Segoe UI", 9, "underline"), bg=PAPER, fg=INK,
+                                     cursor="hand2")
+        self.trusted_link.bind("<Button-1>", lambda _e: self.open_trusted())
         self.status.pack(anchor="w", side="bottom", pady=(18, 0))
-        self.retry = tk.Button(self.root, text="Reintentar", command=self.reconnect, relief="flat",
-                               bg=PAPER, fg=INK, font=("Segoe UI", 10, "underline"), cursor="hand2")
+        self.retry = tk.Button(self.root, text=tr("retry"), command=self.reconnect, relief="flat",
+                               bg=PAPER, fg=INK, activebackground=PAPER, activeforeground=INK,
+                               font=("Segoe UI", 10, "underline"), cursor="hand2")
 
-        self.root.protocol("WM_DELETE_WINDOW", self.quit)
+        # Cerrar la ventana la manda a la bandeja; para salir del todo, «Salir» en la bandeja.
+        self.root.protocol("WM_DELETE_WINDOW", self.hide)
+        match_title_bar(self.root)
+
+    # ---------- Bandeja del sistema ----------
+
+    def make_tray(self) -> pystray.Icon:
+        try:
+            image = Image.open(BUNDLE_DIR / "icon.ico")
+        except OSError:
+            image = Image.new("RGB", (64, 64), ACCENT)
+        # El menú corre en el hilo de la bandeja: las órdenes pasan a tkinter por la cola.
+        menu = pystray.Menu(
+            pystray.MenuItem(tr("tray_open"), lambda: self.ui.put(("show",)), default=True),
+            pystray.MenuItem(tr("tray_autostart"), lambda: set_autostart(not autostart_enabled()),
+                             checked=lambda _item: autostart_enabled(), visible=getattr(sys, "frozen", False)),
+            pystray.MenuItem(tr("tray_quit"), lambda: self.ui.put(("quit",))),
+        )
+        return pystray.Icon("Vincle", image, "Vincle", menu)
+
+    def hide(self) -> None:
+        self.root.withdraw()
+        if not self.hint_shown:
+            self.hint_shown = True
+            try:
+                self.tray.notify(tr("tray_hint"), "Vincle")
+            except Exception:  # noqa: BLE001 — el aviso es opcional
+                pass
+
+    def on_show(self) -> None:
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def on_quit(self) -> None:
+        self.quit()
 
     @staticmethod
     def eyebrow(parent, text):
         return tk.Label(parent, text=text, font=("Segoe UI", 8, "bold"), bg=PAPER, fg=INK)
 
-    def run(self) -> None:
+    def run(self, hidden: bool = False) -> None:
         self.link.start()
+        self.tray.run_detached()
         self.root.after(50, self.poll)
         self.root.after(50, self.tick)
-        # La ventana aparece con un fundido.
-        self.root.attributes("-alpha", 0.0)
-        self.root.after(10, lambda: animate(self.root, 0.35, lambda t: self.root.attributes("-alpha", t)))
+        if hidden:
+            # Al iniciar con Windows arranca en la bandeja, sin ventana.
+            self.root.withdraw()
+            self.hint_shown = True
+        else:
+            # La ventana aparece con un fundido.
+            self.root.attributes("-alpha", 0.0)
+            self.root.after(10, lambda: animate(self.root, 0.35, lambda t: self.root.attributes("-alpha", t)))
         self.root.mainloop()
 
     def poll(self) -> None:
@@ -908,7 +1188,7 @@ class Window:
         if self.expires:
             left_s = (self.expires - datetime.now(timezone.utc)).total_seconds()
             left = int(left_s)
-            self.countdown.config(text=f"Vence en {left // 60}:{left % 60:02d}" if left > 0 else "Generando otro código…")
+            self.countdown.config(text=tr("expires", m=left // 60, s=left % 60) if left > 0 else tr("new_code"))
             share = max(0.0, min(1.0, left_s / self.pin_total))
             self.bar.coords(self.bar_fill, 4, 4, 4 + 282 * share, 4)
             self.bar.itemconfigure(self.bar_fill, state="normal" if share > 0 else "hidden")
@@ -919,7 +1199,7 @@ class Window:
     def on_pin(self, pin: str, expires: datetime) -> None:
         self.expires = expires
         url = f"{APP_URL}#{pin}"
-        png = segno.make(url, error="m").png_data_uri(scale=6, border=2, dark=INK, light=PAPER)
+        png = segno.make(url, error="m").png_data_uri(scale=6, border=2, dark=QR_DARK, light=QR_LIGHT)
         self.qr_image = tk.PhotoImage(data=png.split(",", 1)[1])
         self.pin_total = max(1.0, (expires - datetime.now(timezone.utc)).total_seconds())
         self.linked.pack_forget()
@@ -927,7 +1207,7 @@ class Window:
         self.reveal_qr()
         self.reveal_pin(pin)
         self.retry.pack_forget()
-        self.status.config(text="Esperando al celular…")
+        self.status.config(text=tr("waiting"))
 
     def reveal_qr(self) -> None:
         """El QR aparece de arriba hacia abajo, como si se imprimiera."""
@@ -979,18 +1259,18 @@ class Window:
 
         animate(c, 0.5, step)
 
-    def on_ask(self) -> None:
-        self.root.deiconify()
-        self.root.lift()
-        allow = AskDialog(self.root).wait()
-        self.link.call(self.link.answer(allow))
+    def on_ask(self, name: str) -> None:
+        self.on_show()
+        allow, remember = AskDialog(self.root, name).wait()
+        self.link.call(self.link.answer(allow, remember))
 
-    def on_connected(self, guest_here: bool) -> None:
+    def on_connected(self, guest_here: bool, name: str = "") -> None:
         self.expires = None
         self.guest_here = guest_here
+        self.guest_name = name or self.guest_name or tr("device")
         self.waiting.pack_forget()
         self.linked.pack(anchor="w")
-        self.linked_text.config(text="Celular conectado" if guest_here else "El celular se\ndesconectó")
+        self.linked_text.config(text=tr("connected", name=self.guest_name) if guest_here else tr("gone"))
         self.draw_check(guest_here)
         self.show_link_status()
 
@@ -1000,12 +1280,7 @@ class Window:
             self.show_link_status()
 
     def show_link_status(self) -> None:
-        if not self.guest_here:
-            text = "Se reconectará solo al volver a abrir Vincle en el celular."
-        elif self.direct:
-            text = "Conexión directa con el celular: el cursor responde al instante."
-        else:
-            text = "Conectado por internet (Supabase). Si están en la misma red Wi-Fi, se pasará solo a conexión directa."
+        text = tr("st_away") if not self.guest_here else tr("st_direct") if self.direct else tr("st_cloud")
         self.status.config(text=text)
 
     def on_laser(self, on: bool) -> None:
@@ -1034,18 +1309,18 @@ class Window:
 
     def on_update(self, asset: dict) -> None:
         self.update_asset = asset
-        self.update_text.config(text=f"Hay una versión nueva ({asset['tag']}).")
-        self.update_btn.config(state="normal", text="Actualizar")
+        self.update_text.config(text=tr("update_new", tag=asset["tag"]))
+        self.update_btn.config(state="normal", text=tr("update_btn"))
         self.update_bar.pack(fill="x", pady=(14, 0), after=self.title)
 
     def start_update(self) -> None:
         self.update_btn.config(state="disabled")
-        self.update_text.config(text="Descargando la versión nueva…")
+        self.update_text.config(text=tr("downloading"))
         self.link.call(self.link.update(self.update_asset))
 
     def on_update_failed(self, detail: str) -> None:
-        self.update_text.config(text="No se pudo actualizar. También puedes descargarla desde la página de Vincle.")
-        self.update_btn.config(state="normal", text="Reintentar")
+        self.update_text.config(text=tr("update_failed"))
+        self.update_btn.config(state="normal", text=tr("retry"))
 
     def on_restart(self) -> None:
         # La versión nueva ya se abrió; esta se cierra (y cierra su sala).
@@ -1055,11 +1330,57 @@ class Window:
         self.status.config(text=text)
         self.retry.pack(anchor="w", side="bottom")
 
+    # ---------- Dispositivos de confianza ----------
+
+    def on_trusted(self, rows: list[dict]) -> None:
+        self.trusted = rows
+        if rows:
+            self.trusted_link.config(text=tr("trusted_link", n=len(rows)))
+            self.trusted_link.pack(anchor="w", side="bottom", pady=(10, 0), before=self.status)
+        else:
+            self.trusted_link.pack_forget()
+        if self.trusted_win is not None and self.trusted_win.winfo_exists():
+            self.fill_trusted()
+
+    def open_trusted(self) -> None:
+        if self.trusted_win is not None and self.trusted_win.winfo_exists():
+            self.trusted_win.lift()
+            return
+        top = self.trusted_win = tk.Toplevel(self.root, bg=PAPER, padx=24, pady=20)
+        top.title(tr("trusted_title"))
+        top.resizable(False, False)
+        top.transient(self.root)
+        match_title_bar(top)
+        tk.Label(top, text=tr("trusted_title"), font=("Segoe UI Semibold", 14), bg=PAPER, fg=INK).pack(anchor="w")
+        self.trusted_rows = tk.Frame(top, bg=PAPER)
+        self.trusted_rows.pack(fill="x", pady=(12, 16))
+        soft_button(top, tr("close"), top.destroy).pack(anchor="e")
+        top.bind("<Escape>", lambda _e: top.destroy())
+        self.fill_trusted()
+        top.update_idletasks()
+        x = self.root.winfo_rootx() + 20
+        y = self.root.winfo_rooty() + 60
+        top.geometry(f"+{x}+{y}")
+
+    def fill_trusted(self) -> None:
+        for child in self.trusted_rows.winfo_children():
+            child.destroy()
+        if not self.trusted:
+            tk.Label(self.trusted_rows, text=tr("trusted_empty"), font=("Segoe UI", 10), bg=PAPER, fg=MUTED,
+                     wraplength=280, justify="left").pack(anchor="w")
+            return
+        for row in self.trusted:
+            line = tk.Frame(self.trusted_rows, bg=PAPER)
+            line.pack(fill="x", pady=3)
+            tk.Label(line, text=row["guest_name"], font=("Segoe UI", 10), bg=PAPER, fg=INK).pack(side="left")
+            soft_button(line, tr("forget"), lambda g=row["guest_id"]: self.link.call(self.link.forget(g)),
+                        ).pack(side="right", padx=(24, 0))
+
     # ---------- Acciones ----------
 
     def reconnect(self) -> None:
         self.retry.pack_forget()
-        self.status.config(text="Conectando con el servidor…")
+        self.status.config(text=tr("connecting"))
         self.link.call(self.link.connect())
 
     def disconnect(self) -> None:
@@ -1073,6 +1394,7 @@ class Window:
                 done.result(timeout=3)
             except Exception:  # noqa: BLE001 — al salir, un fallo de red no debe bloquear el cierre
                 pass
+        self.tray.stop()
         self.root.destroy()
 
 
@@ -1084,7 +1406,7 @@ def main() -> None:
         except (AttributeError, OSError):
             pass
     remove_old_exe()
-    Window().run()
+    Window().run(hidden="--tray" in sys.argv)
 
 
 if __name__ == "__main__":

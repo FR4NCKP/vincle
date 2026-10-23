@@ -1,4 +1,5 @@
 import { createClient, type RealtimeChannel } from '@supabase/supabase-js'
+import { t } from './i18n'
 
 // Valores públicos: la seguridad la dan las políticas RLS, no el secreto de esta clave.
 const SUPABASE_URL = 'https://rmhuktsftptgrrzmqcon.supabase.co'
@@ -17,12 +18,14 @@ export type Outgoing =
   | { event: 'hello'; payload: Record<string, never> }
   | { event: 'move'; payload: { x: number; y: number } }
   | { event: 'scroll'; payload: { x: number; y: number } }
-  | { event: 'click'; payload: { button: 'left' | 'right' } }
+  | { event: 'click'; payload: { button: 'left' | 'right' | 'middle' } }
   | { event: 'drag'; payload: { down: boolean } }
   | { event: 'text'; payload: { text: string } }
   | { event: 'key'; payload: { key: string; ctrl: boolean } }
   | { event: 'laser'; payload: { on: boolean } }
   | { event: 'laser_move'; payload: { x: number; y: number } }
+  | { event: 'zoom'; payload: { steps: number } }
+  | { event: 'gesture'; payload: { name: 'left' | 'right' | 'up' | 'down' } }
 
 const ROOM_KEY = 'vincle.room'
 
@@ -47,22 +50,113 @@ async function ensureSession() {
   const { data } = await supabase.auth.getSession()
   if (data.session) return
   const { error } = await supabase.auth.signInAnonymously()
-  if (error) throw new Error('No se pudo iniciar la sesión. Revisa tu conexión.')
+  if (error) throw new Error(t('err_session'))
 }
 
 export async function claim(pin: string): Promise<Room> {
   await ensureSession()
   const { data, error } = await supabase.rpc('claim_room', { p_pin: pin })
   if (error) {
-    throw new Error(error.hint === 'rate_limited'
-      ? 'Demasiados intentos. Espera unos minutos.'
-      : 'No se pudo conectar. Revisa tu conexión.')
+    throw new Error(error.hint === 'rate_limited' ? t('err_rate') : t('err_net'))
   }
   const row = (data as { id: string; host_name: string }[] | null)?.[0]
-  if (!row) throw new Error('Código incorrecto o vencido.')
+  if (!row) throw new Error(t('err_pin'))
   const room = { id: row.id, name: row.host_name }
   saveRoom(room)
   return room
+}
+
+// ---------- Dispositivos de confianza ----------
+// Si una PC "recuerda" este celular, el celular puede tomar su sala sin código, y la PC lo
+// acepta sin preguntar. Lo decide la base de datos (tabla trusted_devices y sus funciones).
+
+export type TrustedHost = { host_id: string; host_name: string }
+
+async function currentUserId() {
+  // Sin sesión guardada no puede haber confianza: no se crea un usuario solo para preguntar.
+  const { data } = await supabase.auth.getSession()
+  return data.session?.user.id ?? null
+}
+
+export async function trustedHosts(): Promise<TrustedHost[]> {
+  const uid = await currentUserId()
+  if (!uid) return []
+  const { data, error } = await supabase.from('trusted_devices')
+    .select('host_id, host_name').eq('guest_id', uid).order('created_at')
+  return error ? [] : data ?? []
+}
+
+/** Toma la sala libre más reciente de una PC que confía en este celular, si la hay. */
+export async function claimTrusted(): Promise<Room | null> {
+  const { data, error } = await supabase.rpc('claim_trusted')
+  const row = (data as { id: string; host_name: string }[] | null)?.[0]
+  if (error || !row) return null
+  const room = { id: row.id, name: row.host_name }
+  saveRoom(room)
+  return room
+}
+
+export async function forgetHost(hostId: string) {
+  const uid = await currentUserId()
+  if (uid) await supabase.from('trusted_devices').delete().eq('host_id', hostId).eq('guest_id', uid)
+}
+
+/** Nombre con el que la PC ve a este dispositivo, por ejemplo "Celular Android (SM-A515F)". */
+async function describeDevice(): Promise<string> {
+  const ua = navigator.userAgent
+  const ipad = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+  if (ipad) return 'iPad'
+  if (/iPhone|iPod/.test(ua)) return 'iPhone'
+  const tablet = /Tablet/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua))
+  const os = /Android/i.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : ''
+  let name = t(tablet ? 'dev_tablet' : 'dev_phone', { os }).trim()
+  const uad = (navigator as Navigator & { userAgentData?: { getHighEntropyValues(h: string[]): Promise<{ model?: string }> } }).userAgentData
+  try {
+    const model = (await uad?.getHighEntropyValues(['model']))?.model
+    if (model) name += ` (${model})`
+  } catch {
+    // Sin el modelo queda el nombre genérico.
+  }
+  return name
+}
+
+const deviceName = describeDevice()
+
+// ---------- Latencia ----------
+// Cada tanto se manda la hora a la PC y ella la devuelve: la diferencia es la ida y vuelta.
+// Por Supabase se mide con menos frecuencia, porque cada mensaje cuenta para la cuota mensual.
+
+const PING_DIRECT_MS = 2000
+const PING_CLOUD_MS = 5000
+
+let pingTimer = 0
+let smoothRtt: number | null = null
+let lastPong = 0
+let onLatency: (ms: number | null) => void = () => {}
+
+function gotPong(sent: unknown) {
+  if (typeof sent !== 'number') return
+  const rtt = performance.now() - sent
+  if (rtt < 0 || rtt > 10_000) return
+  smoothRtt = smoothRtt === null ? rtt : smoothRtt * 0.6 + rtt * 0.4
+  lastPong = performance.now()
+  onLatency(Math.round(smoothRtt))
+}
+
+function ping(ch: RealtimeChannel) {
+  clearTimeout(pingTimer)
+  const direct = isDirect()
+  const every = direct ? PING_DIRECT_MS : PING_CLOUD_MS
+  pingTimer = window.setTimeout(() => ping(ch), every)
+  if (ch !== channel || !live || !accepted || document.visibilityState !== 'visible') return
+  // Sin respuesta (la PC no está o es una versión sin medición): no se muestra ningún valor.
+  if (performance.now() - lastPong > every * 2.5) {
+    smoothRtt = null
+    onLatency(null)
+  }
+  const payload = { t: performance.now() }
+  if (direct) sure!.send(JSON.stringify({ event: 'ping', payload }))
+  else void ch.send({ type: 'broadcast', event: 'ping', payload })
 }
 
 let channel: RealtimeChannel | null = null
@@ -132,6 +226,14 @@ async function startDirect(ch: RealtimeChannel, report: () => void) {
   }
   f.onopen = s.onopen = opened
   f.onclose = s.onclose = down
+  f.onmessage = s.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data)
+      if (msg?.event === 'pong') gotPong(msg.payload?.t)
+    } catch {
+      // Mensaje que no se entiende: se ignora.
+    }
+  }
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') down()
   }
@@ -150,8 +252,9 @@ function closeDirect() {
   pc?.close()
 }
 
-export function join(room: Room, onState: (s: LinkState) => void) {
+export function join(room: Room, onState: (s: LinkState) => void, latency: (ms: number | null) => void) {
   leave()
+  onLatency = latency
   const ch = supabase.channel(`room:${room.id}`, {
     config: { private: true, presence: { key: 'guest' } },
   })
@@ -159,8 +262,17 @@ export function join(room: Room, onState: (s: LinkState) => void) {
   accepted = false
   seq = 0
   let hostHere = false
-  const report = () =>
+  let wasDirect = false
+  const report = () => {
+    // Al pasar de Supabase a directa (o al revés) la medición vieja ya no sirve.
+    if (isDirect() !== wasDirect) {
+      wasDirect = isDirect()
+      smoothRtt = null
+      lastPong = performance.now()
+      ping(ch)
+    }
     onState(!accepted ? 'waiting' : !hostHere ? 'host-away' : isDirect() ? 'direct' : 'connected')
+  }
 
   ch.on('broadcast', { event: 'status' }, ({ payload }) => {
     // rejected: quien está en la PC no dio permiso. closed: la PC cerró la sala.
@@ -174,6 +286,8 @@ export function join(room: Room, onState: (s: LinkState) => void) {
     if (accepted && !wasAccepted) {
       directFailures = 0
       void startDirect(ch, report)
+      lastPong = performance.now()
+      ping(ch)
     }
     report()
   })
@@ -183,6 +297,7 @@ export function join(room: Room, onState: (s: LinkState) => void) {
       pc.setRemoteDescription({ type: 'answer', sdp: payload.sdp }).catch(() => pc.close())
     }
   })
+  ch.on('broadcast', { event: 'pong' }, ({ payload }) => gotPong(payload?.t))
   ch.on('presence', { event: 'sync' }, () => {
     hostHere = 'host' in ch.presenceState()
     report()
@@ -214,7 +329,8 @@ export function join(room: Room, onState: (s: LinkState) => void) {
 export function send(msg: Outgoing) {
   if (!live || !channel) return
   if (msg.event === 'hello') {
-    void channel.send({ type: 'broadcast', event: 'hello', payload: {} })
+    const ch = channel
+    void deviceName.then((name) => ch.send({ type: 'broadcast', event: 'hello', payload: { name } }))
     return
   }
   // Sin permiso de la PC no se envía nada: la PC lo descartaría y gastaría cuota.
@@ -230,6 +346,9 @@ export function send(msg: Outgoing) {
 
 function leave() {
   closeDirect()
+  clearTimeout(pingTimer)
+  smoothRtt = null
+  onLatency(null)
   if (channel) void supabase.removeChannel(channel)
   channel = null
   live = false

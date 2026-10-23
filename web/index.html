@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#E7EAF0">
+  <!-- El tema elegido se aplica antes de pintar, para que no destelle el claro. -->
+  <script>try{var t=localStorage.getItem('vincle.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
   <title>Vincle</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <!-- Los íconos llevan versión en el nombre: celulares y navegadores guardan los íconos por
@@ -22,7 +24,7 @@
     <span class="logo raised" aria-hidden="true">V</span>
     <div>
       <h1>Vincle</h1>
-      <p>Tu celular como trackpad y teclado</p>
+      <p data-i18n="tagline">Tu celular como trackpad y teclado</p>
     </div>
   </header>
 
@@ -30,23 +32,23 @@
     <section class="card raised">
       <div class="card-head">
         <span class="well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span>
-        <div><h2>Para tu computadora</h2><p>Tres pasos y listo</p></div>
+        <div><h2 data-i18n="dl_title">Para tu computadora</h2><p data-i18n="dl_sub">Tres pasos y listo</p></div>
       </div>
       <ol class="rows">
-        <li class="row raised-sm"><span class="well num">1</span><span>Descarga <b>Vincle.exe</b> y ábrelo con doble clic. No se instala nada.</span></li>
-        <li class="row raised-sm"><span class="well num">2</span><span>Abre esta página en tu celular y escanea el código que aparece en la computadora.</span></li>
-        <li class="row raised-sm"><span class="well num">3</span><span>Acepta la conexión en la computadora.</span></li>
+        <li class="row raised-sm"><span class="well num">1</span><span data-i18n-html="dl_1">Descarga <b>Vincle.exe</b> y ábrelo con doble clic. No se instala nada.</span></li>
+        <li class="row raised-sm"><span class="well num">2</span><span data-i18n="dl_2">Abre esta página en tu celular y escanea el código que aparece en la computadora.</span></li>
+        <li class="row raised-sm"><span class="well num">3</span><span data-i18n="dl_3">Acepta la conexión en la computadora.</span></li>
       </ol>
-      <p class="note">La primera vez, Windows puede mostrar «Windows protegió su PC». Toca «Más información» y luego «Ejecutar de todas formas».</p>
+      <p class="note" data-i18n="dl_note">La primera vez, Windows puede mostrar «Windows protegió su PC». Toca «Más información» y luego «Ejecutar de todas formas».</p>
     </section>
   </div>
 
   <div class="footer">
     <a class="pill-btn raised" href="https://github.com/FR4NCKP/vincle/releases/latest/download/Vincle.exe" download>
-      <span>Descargar para Windows</span>
+      <span data-i18n="dl_btn">Descargar para Windows</span>
       <span class="well sm" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg></span>
     </a>
-    <button class="text-link" type="button" id="use-as-remote">Usar esta página como control</button>
+    <button class="text-link" type="button" id="use-as-remote" data-i18n="use_remote">Usar esta página como control</button>
   </div>
 </section>
 
@@ -56,35 +58,36 @@
     <span class="logo raised" aria-hidden="true">V</span>
     <div>
       <h1>Vincle</h1>
-      <p>Tu celular como trackpad y teclado</p>
+      <p data-i18n="tagline">Tu celular como trackpad y teclado</p>
     </div>
-    <button class="round-btn raised-sm" data-open-settings aria-label="Ajustes">
+    <button class="round-btn raised-sm" data-open-settings data-i18n-label="settings" aria-label="Ajustes">
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
     </button>
   </header>
 
   <div class="scroll">
+    <p class="trusted-note raised-sm" id="trusted-note" hidden><span class="dot" aria-hidden="true"></span><span id="trusted-note-text"></span></p>
     <section class="card raised">
       <div class="card-head">
         <span class="well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg></span>
-        <div><h2>Escanea el código QR</h2><p>El que muestra tu computadora</p></div>
+        <div><h2 data-i18n="scan_title">Escanea el código QR</h2><p data-i18n="scan_sub">El que muestra tu computadora</p></div>
       </div>
-      <button class="viewfinder inset" id="scan" type="button" aria-label="Activar la cámara para escanear el código QR">
+      <button class="viewfinder inset" id="scan" type="button" data-i18n-label="scan_aria" aria-label="Activar la cámara para escanear el código QR">
         <video id="scan-video" playsinline muted hidden></video>
         <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span>
         <span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
         <span class="scanline" aria-hidden="true"></span>
         <svg class="scan-check" aria-hidden="true" viewBox="0 0 52 52"><circle cx="26" cy="26" r="26"/><path d="M15 27l7 7 15-15"/></svg>
-        <span class="viewfinder-hint" id="scan-hint">Toca para activar la cámara y apunta al código que muestra tu computadora</span>
+        <span class="viewfinder-hint" id="scan-hint" data-i18n="scan_hint">Toca para activar la cámara y apunta al código que muestra tu computadora</span>
       </button>
     </section>
 
-    <div class="or" aria-hidden="true"><span></span><i>o</i><span></span></div>
+    <div class="or" aria-hidden="true"><span></span><i data-i18n="or">o</i><span></span></div>
 
     <form id="pin-form" class="card raised" novalidate>
       <div class="card-head">
         <span class="well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
-        <div><h2 id="pin-title">Código de 6 dígitos</h2><p>Escríbelo si no puedes escanear</p></div>
+        <div><h2 id="pin-title" data-i18n="pin_title">Código de 6 dígitos</h2><p data-i18n="pin_sub">Escríbelo si no puedes escanear</p></div>
       </div>
       <div role="group" aria-labelledby="pin-title">
         <div class="pin" id="pin">
@@ -95,118 +98,151 @@
           <input class="inset-sm" aria-label="Dígito 5" inputmode="numeric" maxlength="6">
           <input class="inset-sm" aria-label="Dígito 6" inputmode="numeric" maxlength="6">
         </div>
-        <p class="note" id="connect-msg" role="status" aria-live="polite">Ambos aparecen al abrir Vincle en tu computadora.</p>
+        <p class="note" id="connect-msg" role="status" aria-live="polite" data-i18n="connect_note">Ambos aparecen al abrir Vincle en tu computadora.</p>
       </div>
     </form>
   </div>
 
   <div class="footer">
     <button class="pill-btn raised" type="submit" form="pin-form" id="connect-btn">
-      <span>Conectar</span>
+      <span data-i18n="connect_btn">Conectar</span>
       <span class="well sm" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
     </button>
   </div>
 </section>
 
-<!-- 02 Trackpad -->
-<section class="screen" id="pad" hidden>
+<!-- 02 Control: trackpad, diapositivas y multimedia, en pestañas -->
+<section class="screen" id="remote" data-panel="pad" hidden>
   <header class="topbar">
     <span class="logo raised" aria-hidden="true">V</span>
     <div class="hello raised">
       <div class="hello-text">
-        <strong>Trackpad</strong>
+        <strong id="host-name">Vincle</strong>
         <span class="status" data-status><span class="dot" aria-hidden="true"></span><span data-status-text>Conectando…</span></span>
       </div>
-      <button class="round-btn raised-sm" id="toggle-keys" aria-label="Teclado" aria-pressed="false">
+      <button class="round-btn raised-sm" id="toggle-keys" data-i18n-label="keyboard" aria-label="Teclado" aria-pressed="false">
         <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.5M11 10h.5M15 10h.5M8 14h8"/></svg>
       </button>
-      <button class="round-btn raised-sm" id="open-present" aria-label="Presentación">
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8M10 8l4 2-4 2z"/></svg>
-      </button>
-      <button class="round-btn raised-sm" data-open-settings aria-label="Ajustes">
+      <button class="round-btn raised-sm" data-open-settings data-i18n-label="settings" aria-label="Ajustes">
         <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
       </button>
     </div>
   </header>
 
-  <div class="surface inset" id="surface" aria-label="Superficie del trackpad">
-    <div class="ring raised-sm" id="ring" aria-hidden="true"><span></span></div>
-    <p class="surface-hint">Un dedo mueve el cursor<br>Dos dedos desplazan<br>Mantén pulsado para arrastrar</p>
-  </div>
+  <nav class="tabs inset" id="tabs" role="tablist" data-i18n-label="tabs" aria-label="Modo">
+    <span class="tab-thumb raised-sm" aria-hidden="true"></span>
+    <button role="tab" data-tab="pad" aria-selected="true" aria-controls="pad">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 15h16M12 15v5"/></svg><span data-i18n="tab_pad">Trackpad</span>
+    </button>
+    <button role="tab" data-tab="present" aria-selected="false" aria-controls="present">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8M10 8l4 2-4 2z"/></svg><span data-i18n="tab_present">Diapositivas</span>
+    </button>
+    <button role="tab" data-tab="media" aria-selected="false" aria-controls="media">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span data-i18n="tab_media">Multimedia</span>
+    </button>
+  </nav>
 
-  <div class="typing">
-    <div class="keybar" id="keybar">
-      <button class="raised-sm" data-key="esc">esc</button>
-      <button class="raised-sm" data-key="tab">tab</button>
-      <button class="raised-sm" id="ctrl" aria-pressed="false">ctrl</button>
-      <button class="raised-sm" data-key="left" aria-label="Flecha izquierda"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
-      <button class="raised-sm" data-key="right" aria-label="Flecha derecha"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-      <button class="raised-sm" data-key="backspace" aria-label="Borrar"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path d="M9 5h11v14H9l-6-7z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/></svg></button>
-      <button class="raised-sm accent" data-key="enter" aria-label="Enter"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M19 5v7a2 2 0 0 1-2 2H6M10 10l-4 4 4 4"/></svg></button>
+  <!-- Trackpad -->
+  <div class="panel" id="pad" role="tabpanel">
+    <div class="surface inset" id="surface" data-i18n-label="surface_aria" aria-label="Superficie del trackpad">
+      <div class="ring raised-sm" id="ring" aria-hidden="true"><span></span></div>
+      <p class="surface-hint" data-i18n-html="surface_hint">Un dedo mueve el cursor<br>Dos dedos desplazan o hacen zoom<br>Tres dedos cambian de ventana<br>Mantén pulsado para arrastrar</p>
     </div>
-    <label class="type-wrap inset">
-      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.5M11 10h.5M15 10h.5M8 14h8"/></svg>
-      <input id="texto" class="type-field" type="text" placeholder="Toca aquí para escribir" aria-label="Escribir en la computadora"
-        autocomplete="off" autocapitalize="sentences" spellcheck="false" enterkeyhint="enter">
-    </label>
-  </div>
 
-  <div class="tiles">
-    <button class="tile raised" id="click-left">
-      <span class="well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6M6 9h6"/></svg></span>
-      <span class="tile-text"><strong>Clic</strong><small>Botón izquierdo</small></span>
-    </button>
-    <button class="tile raised" id="click-right">
-      <span class="well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6M12 9h6"/></svg></span>
-      <span class="tile-text"><strong>Clic derecho</strong><small>Menú contextual</small></span>
-    </button>
-  </div>
-</section>
-
-<!-- 03 Presentación -->
-<section class="screen" id="present" hidden>
-  <header class="topbar">
-    <span class="logo raised" aria-hidden="true">V</span>
-    <div class="hello raised">
-      <div class="hello-text">
-        <strong>Presentación</strong>
-        <span class="status" data-status><span class="dot" aria-hidden="true"></span><span data-status-text>Conectando…</span></span>
+    <div class="typing">
+      <div class="keybar" id="keybar">
+        <button class="raised-sm" data-key="esc">esc</button>
+        <button class="raised-sm" data-key="tab">tab</button>
+        <button class="raised-sm" id="ctrl" aria-pressed="false">ctrl</button>
+        <button class="raised-sm" data-key="left" data-i18n-label="key_left" aria-label="Flecha izquierda"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+        <button class="raised-sm" data-key="right" data-i18n-label="key_right" aria-label="Flecha derecha"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <button class="raised-sm" data-key="backspace" data-i18n-label="key_back" aria-label="Borrar"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path d="M9 5h11v14H9l-6-7z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/></svg></button>
+        <button class="raised-sm accent" data-key="enter" aria-label="Enter"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M19 5v7a2 2 0 0 1-2 2H6M10 10l-4 4 4 4"/></svg></button>
       </div>
-      <button class="round-btn raised-sm" id="close-present" aria-label="Volver al trackpad">
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M5 15h14M12 15v6"/></svg>
-      </button>
-      <button class="round-btn raised-sm" data-open-settings aria-label="Ajustes">
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
-      </button>
+      <div class="type-wrap inset">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.5M11 10h.5M15 10h.5M8 14h8"/></svg>
+        <input id="texto" class="type-field" type="text" placeholder="Toca aquí para escribir" data-i18n-ph="type_ph" data-i18n-label="type_aria" aria-label="Escribir en la computadora"
+          autocomplete="off" autocapitalize="sentences" spellcheck="false" enterkeyhint="enter">
+        <button class="mic round-btn raised-sm" id="mic" type="button" data-i18n-label="dictate" aria-label="Dictar por voz" aria-pressed="false" hidden>
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+      </div>
     </div>
-  </header>
 
-  <section class="card raised laser-card">
-    <div class="card-head">
-      <span class="well laser-well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
-      <div><h2>Puntero láser</h2><p>Mantén el dedo y muévelo para señalar</p></div>
+    <div class="tiles">
+      <button class="tile raised" id="click-left">
+        <span class="well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6M6 9h6"/></svg></span>
+        <span class="tile-text"><strong data-i18n="click">Clic</strong><small data-i18n="click_sub">Botón izquierdo</small></span>
+      </button>
+      <button class="tile raised" id="click-right">
+        <span class="well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6M12 9h6"/></svg></span>
+        <span class="tile-text"><strong data-i18n="rclick">Clic derecho</strong><small data-i18n="rclick_sub">Menú contextual</small></span>
+      </button>
     </div>
-    <div class="surface inset laser-pad" id="laser-pad" aria-label="Zona del puntero láser">
-      <span class="laser-dot" id="laser-dot" aria-hidden="true"></span>
-      <p class="surface-hint laser-hint">Toca aquí</p>
-    </div>
-  </section>
+  </div>
 
-  <div class="slide-buttons" id="slide-buttons">
-    <button class="tile raised" data-key="pageup" aria-label="Diapositiva anterior">
-      <span class="well" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></span>
-      <span class="tile-text"><strong>Anterior</strong></span>
-    </button>
-    <button class="tile raised next" data-key="pagedown" aria-label="Diapositiva siguiente">
-      <span class="tile-text"><strong>Siguiente</strong></span>
-      <span class="well accent" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
-    </button>
-    <button class="chip raised-sm" data-key="f5" aria-label="Iniciar presentación">
-      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>Iniciar
-    </button>
-    <button class="chip raised-sm" data-key="esc">
-      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>Salir
-    </button>
+  <!-- Diapositivas -->
+  <div class="panel" id="present" role="tabpanel" hidden>
+    <section class="card raised laser-card">
+      <div class="card-head">
+        <span class="well laser-well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
+        <div><h2 data-i18n="laser_title">Puntero láser</h2><p data-i18n="laser_sub">Mantén el dedo y muévelo para señalar</p></div>
+      </div>
+      <div class="surface inset laser-pad" id="laser-pad" data-i18n-label="laser_aria" aria-label="Zona del puntero láser">
+        <span class="laser-dot" id="laser-dot" aria-hidden="true"></span>
+        <p class="surface-hint laser-hint" data-i18n="laser_hint">Toca aquí</p>
+      </div>
+    </section>
+
+    <div class="slide-buttons" id="slide-buttons">
+      <button class="tile raised" data-key="pageup" data-i18n-label="prev_slide" aria-label="Diapositiva anterior">
+        <span class="well" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></span>
+        <span class="tile-text"><strong data-i18n="prev">Anterior</strong></span>
+      </button>
+      <button class="tile raised next" data-key="pagedown" data-i18n-label="next_slide" aria-label="Diapositiva siguiente">
+        <span class="tile-text"><strong data-i18n="next">Siguiente</strong></span>
+        <span class="well accent" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </button>
+      <button class="chip raised-sm" data-key="f5" data-i18n-label="start_show" aria-label="Iniciar presentación">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg><span data-i18n="start">Iniciar</span>
+      </button>
+      <button class="chip raised-sm" data-key="esc">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span data-i18n="exit">Salir</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Multimedia -->
+  <div class="panel" id="media" role="tabpanel" hidden>
+    <section class="card raised media-card" id="media-buttons">
+      <div class="card-head">
+        <span class="well accent" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></span>
+        <div><h2 data-i18n="media_title">Multimedia</h2><p data-i18n="media_sub">Música y videos de la computadora</p></div>
+      </div>
+      <div class="transport">
+        <button class="media-btn raised" data-key="prev" data-i18n-label="prev_track" aria-label="Pista anterior">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24"><path d="M18 6l-8 6 8 6zM6 6v12"/></svg>
+        </button>
+        <button class="media-btn play raised" data-key="play" data-i18n-label="play" aria-label="Reproducir o pausar">
+          <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24"><path d="M4 6l8 6-8 6zM15 6v12M20 6v12"/></svg>
+        </button>
+        <button class="media-btn raised" data-key="next" data-i18n-label="next_track" aria-label="Pista siguiente">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24"><path d="M6 6l8 6-8 6zM18 6v12"/></svg>
+        </button>
+      </div>
+      <p class="field-label volume-label" data-i18n="volume">Volumen</p>
+      <div class="volume">
+        <button class="tile raised" data-key="voldown" data-repeat data-i18n-label="vol_down" aria-label="Bajar volumen">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 12h5"/></svg>
+        </button>
+        <button class="tile raised" data-key="mute" data-i18n-label="mute" aria-label="Silenciar">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 9.5l5 5M21 9.5l-5 5"/></svg>
+        </button>
+        <button class="tile raised" data-key="volup" data-repeat data-i18n-label="vol_up" aria-label="Subir volumen">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 12h5M18.5 9.5v5"/></svg>
+        </button>
+      </div>
+    </section>
   </div>
 </section>
 
@@ -214,12 +250,31 @@
   <form method="dialog">
     <div class="card-head">
       <span class="well" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>
-      <div><h2 id="settings-title">Ajustes</h2><p>Se guardan en este celular</p></div>
+      <div><h2 id="settings-title" data-i18n="settings">Ajustes</h2><p data-i18n="set_sub">Se guardan en este celular</p></div>
     </div>
-    <label class="field-label" for="sensitivity">Sensibilidad del cursor <output id="sensitivity-out" for="sensitivity"></output></label>
+    <label class="field-label" for="sensitivity"><span data-i18n="sensitivity">Sensibilidad del cursor</span> <output id="sensitivity-out" for="sensitivity"></output></label>
     <input type="range" id="sensitivity" min="0.4" max="3" step="0.1">
-    <button type="button" class="pill-btn raised danger" id="disconnect">Desconectar</button>
-    <button class="pill-btn raised">Listo</button>
+    <fieldset class="seg-field">
+      <legend class="field-label" data-i18n="theme">Tema</legend>
+      <div class="seg inset-sm" id="theme-choice">
+        <label><input type="radio" name="theme" value="auto"><span data-i18n="theme_auto">Auto</span></label>
+        <label><input type="radio" name="theme" value="light"><span data-i18n="theme_light">Claro</span></label>
+        <label><input type="radio" name="theme" value="dark"><span data-i18n="theme_dark">Oscuro</span></label>
+      </div>
+    </fieldset>
+    <fieldset class="seg-field">
+      <legend class="field-label" data-i18n="language">Idioma</legend>
+      <div class="seg inset-sm" id="lang-choice">
+        <label><input type="radio" name="lang" value="es"><span>Español</span></label>
+        <label><input type="radio" name="lang" value="en"><span>English</span></label>
+      </div>
+    </fieldset>
+    <div class="trusted-list" id="trusted-list" hidden>
+      <p class="field-label" data-i18n="trusted_pcs">Computadoras de confianza</p>
+      <ul id="trusted-rows"></ul>
+    </div>
+    <button type="button" class="pill-btn raised danger" id="disconnect" data-i18n="disconnect">Desconectar</button>
+    <button class="pill-btn raised" data-i18n="done">Listo</button>
   </form>
 </dialog>
 

@@ -9,7 +9,7 @@ web/                           canal privado room:<id>            desktop/vincle
 ```
 
 - `web/`: app del celular. Vite + TypeScript sin framework, publicada en GitHub Pages.
-- `desktop/`: programa de la PC. Python con `pynput` (mouse y teclado), `tkinter` (ventana), `segno` (QR) y `aiortc` (WebRTC).
+- `desktop/`: programa de la PC. Python con `pynput` (mouse y teclado), `tkinter` (ventana), `segno` (QR), `aiortc` (WebRTC) y `pystray` (ícono en la bandeja del sistema).
 - `supabase/migrations/`: tablas, funciones y políticas de la base de datos.
 
 ## Cómo se usa
@@ -18,25 +18,40 @@ En el celular no se instala nada: Vincle se abre en el navegador desde https://f
 
 1. En la PC abres Vincle. La ventana muestra un QR y un código de 6 dígitos que vence a los 2 minutos (luego aparece otro).
 2. En el celular escaneas el QR con la cámara (abre la app con el código puesto) o abres la app y escribes el código.
-3. La PC pregunta si permites la conexión. Mientras no aceptes, no se ejecuta nada de lo que llegue del celular.
-4. Trackpad:
+3. La PC pregunta si permites la conexión, con el nombre del dispositivo. Mientras no aceptes, no se ejecuta nada de lo que llegue del celular. Si marcas **Recordar este dispositivo**, la próxima vez se conecta solo (ver «Dispositivos de confianza»).
+4. Arriba están las pestañas **Trackpad**, **Diapositivas** y **Multimedia**. Trackpad:
    - un dedo mueve el cursor
-   - tocar es clic, tocar con dos dedos es clic derecho
+   - tocar es clic, tocar con dos dedos es clic derecho y con tres, clic central (abre enlaces en otra pestaña)
    - mantener pulsado medio segundo y mover arrastra
-   - dos dedos desplazan
+   - dos dedos desplazan y, al soltarlos en movimiento, el desplazamiento sigue un momento y frena solo (inercia)
+   - pellizcar con dos dedos hace zoom (Ctrl + rueda: navegador, documentos, imágenes)
+   - deslizar tres dedos a los lados cambia de ventana (Alt + Tab), hacia arriba abre la vista de tareas y hacia abajo muestra el escritorio
 5. Teclado, en la misma pantalla que el trackpad:
    - tocas «Toca aquí para escribir» (o el ícono de teclado de arriba) y se abre el teclado del celular; el trackpad sigue visible y se puede usar mientras escribes
    - cada letra llega a la PC al momento, igual que en un teclado real; borrar, el autocorrector y las sugerencias también se reflejan
    - mientras escribes aparece una fila con `esc`, `tab`, `ctrl`, las flechas, borrar y Enter
    - `ctrl` queda activo para la siguiente tecla: tocas `ctrl` y luego la `c` y se manda ctrl + c
    - para dejar de escribir, bajas el teclado del celular o tocas otra vez el ícono de teclado
-6. Presentación (ícono de pantalla con un triángulo, arriba):
+   - el micrófono al lado del campo es el **dictado por voz**: hablas y el texto llega a la PC al terminar cada frase. Usa el reconocimiento del propio navegador (gratis, en el idioma del celular); si el navegador no lo tiene, el botón no aparece
+6. Diapositivas:
    - **Siguiente** y **Anterior** pasan las diapositivas con AvPág y RePág, las mismas teclas que usan los presentadores inalámbricos; funcionan en PowerPoint, Google Slides, Canva y visores de PDF
    - **Iniciar presentación** manda F5 y **Salir** manda Esc
    - en la zona **Láser**, mientras mantienes el dedo y lo mueves, aparece un punto rojo en la pantalla de la PC donde está la presentación (también en un proyector), con una estela que se desvanece en medio segundo. Al soltar el punto se oculta y, al volver a tocar, sigue desde donde quedó. No mueve el mouse ni hace clic
-   - mientras estás en esta pantalla, el celular no se apaga solo
-7. Arriba se ve «Conexión directa» cuando el celular habla directo con la PC, o solo «Conectado» si va por Supabase.
-8. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
+   - mientras estás en esta pestaña, el celular no se apaga solo
+7. Multimedia: reproducir/pausar, pista anterior y siguiente, bajar, silenciar y subir el volumen. Son las teclas multimedia de Windows, así que funcionan con Spotify, YouTube en el navegador, VLC y el volumen del sistema. Los botones de volumen se repiten mientras los mantienes.
+8. Arriba se ve el nombre de la PC, «Conexión directa» o «Conectado» (por Supabase) y la **latencia**: lo que tarda un mensaje en ir a la PC y volver, medido cada 2 s por la conexión directa y cada 5 s por Supabase. El punto se pone ámbar si pasa de 150 ms.
+9. Si recargas la app del celular, vuelve a la misma sesión sin pedir el código. **Desconectar** (en Ajustes del celular o en la ventana de la PC) cierra la sesión.
+10. En **Ajustes** del celular: sensibilidad del cursor, tema (automático, claro u oscuro), idioma (español o inglés) y las computadoras de confianza, con **Olvidar** para cada una.
+
+### Dispositivos de confianza
+
+Al permitir una conexión en la PC puedes marcar **Recordar este dispositivo**. Desde entonces, cuando ese celular está en la pantalla de conexión, pregunta cada 3 s si esa PC abrió Vincle y, en cuanto la abre, entra solo, sin QR ni código, y la PC lo acepta sin preguntar. La pantalla de conexión lo avisa («Se conectará solo a …»). Lo decide la base de datos, no lo que diga el celular: la PC confía en la cuenta anónima del celular, que se guarda en su navegador (si se borran los datos del navegador, hay que volver a aceptarlo). Para dejar de confiar: **Olvidar** en Ajustes del celular o en «Dispositivos de confianza» en la ventana de la PC.
+
+### Bandeja del sistema, tema e idioma de la PC
+
+Cerrar la ventana de Vincle no lo cierra: queda en la bandeja del sistema, junto al reloj (la primera vez lo avisa). Desde el ícono se vuelve a abrir la ventana, se activa **Iniciar con Windows** (solo con el `.exe`; arranca directo en la bandeja) o se sale del todo con **Salir**. Si llega un pedido de conexión con la ventana oculta, la ventana aparece sola.
+
+La ventana sigue el tema de las apps de Windows (claro u oscuro, en Configuración → Personalización → Colores) y el idioma de Windows: español si Windows está en español, inglés en cualquier otro caso.
 
 La interfaz tiene animaciones en las dos partes (botones, cambio de pantalla, escaneo del QR, código, conexión, láser). Si el sistema tiene activado «reducir movimiento» (o en Windows, «Mostrar animaciones» apagado), se omiten.
 
@@ -45,7 +60,7 @@ La interfaz tiene animaciones en las dos partes (botones, cambio de pantalla, es
 El proyecto `vincle` ya está creado (plan Free, región `sa-east-1`, São Paulo) y la migración ya se aplicó. Si hay que recrearlo:
 
 1. Crea un proyecto en el plan **Free**. Conviene la región más cercana a quienes lo usan.
-2. Aplica `supabase/migrations/20261020000000_rooms_and_realtime_auth.sql` (en el SQL Editor o con `supabase db push`).
+2. Aplica las migraciones de `supabase/migrations/`, en orden (en el SQL Editor o con `supabase db push`).
 3. En **Authentication → Sign In / Providers**, activa **Allow anonymous sign-ins**.
 4. Opcional, para más seguridad: en **Realtime → Settings**, desactiva **Allow public access**, así solo se permiten canales privados.
 5. Copia la URL del proyecto y la clave publicable (`sb_publishable_…`) en `web/src/net.ts` y en `desktop/vincle.py`. Ambas son públicas por diseño; lo que protege los datos son las políticas RLS.
@@ -58,9 +73,13 @@ El proyecto `vincle` ya está creado (plan Free, región `sa-east-1`, São Paulo
 | `claim_attempts` | Intentos fallidos de reclamar un PIN. Con 10 fallos en 10 minutos, el usuario queda bloqueado un rato. |
 | `create_room(nombre)` | La llama la PC. Borra su sala anterior y crea otra con un PIN aleatorio que no esté en uso. |
 | `claim_room(pin)` | La llama el celular. Si el PIN existe, está vigente y nadie lo usó, lo asigna a quien llama. Después de eso el PIN ya no sirve. |
+| `trusted_devices` | Qué PC (`host_id`) confía en qué celular (`guest_id`), con los nombres de los dos. Cada lado ve y puede borrar solo las suyas. |
+| `trust_guest(sala, nombre)` | La llama la PC al marcar «Recordar este dispositivo»: guarda al invitado de su sala actual. |
+| `claim_trusted()` | La llama el celular: toma, sin PIN, la sala libre más reciente de una PC que confía en él. |
+| `room_guest_trusted(sala)` | La llama la PC al recibir `hello`: si el invitado es de confianza, acepta sin preguntar. |
 | Políticas en `realtime.messages` | En el canal `room:<id>` solo el host y el guest de esa sala pueden unirse, enviar y recibir Broadcast y Presence. |
 
-Las dos funciones son `SECURITY DEFINER` a propósito: son la única forma de crear o reclamar salas, porque la tabla no tiene políticas de inserción ni de actualización. El aviso del linter de Supabase sobre ellas es esperado.
+`create_room`, `claim_room`, `trust_guest` y `claim_trusted` son `SECURITY DEFINER` a propósito: son la única forma de crear o reclamar salas, porque la tabla no tiene políticas de inserción ni de actualización. El aviso del linter de Supabase sobre ellas es esperado.
 
 ## Protocolo
 
@@ -70,17 +89,20 @@ Del celular a la PC:
 
 | Evento | Datos | Efecto en la PC |
 | --- | --- | --- |
-| `hello` | `{}` | El celular entró al canal. La PC pide permiso o, si ya lo dio, responde `accepted`. |
+| `hello` | `{name}` | El celular entró al canal y dice cómo se llama (por ejemplo «Celular Android (SM-A515F)»). La PC pide permiso, acepta sola si es de confianza o, si ya lo dio, responde `accepted`. |
 | `move` | `{x, y}` en píxeles | Mueve el cursor de forma relativa. |
 | `scroll` | `{x, y}` en píxeles de dedo | Rueda del mouse, con desplazamiento natural (unos 40 px por clic de rueda). |
-| `click` | `{button: "left" \| "right"}` | Clic. |
+| `click` | `{button: "left" \| "right" \| "middle"}` | Clic. |
 | `drag` | `{down: true \| false}` | Mantiene o suelta el botón izquierdo. |
 | `text` | `{text}` | Escribe el texto (admite tildes y ñ). |
-| `key` | `{key, ctrl}` | `esc`, `tab`, `left`, `right`, `enter`, `backspace`, `pagedown`, `pageup`, `f5` o un solo carácter. |
+| `key` | `{key, ctrl}` | `esc`, `tab`, `left`, `right`, `enter`, `backspace`, `pagedown`, `pageup`, `f5`, las multimedia `play`, `prev`, `next`, `volup`, `voldown`, `mute`, o un solo carácter. |
+| `zoom` | `{steps}` | Ctrl + rueda, `steps` clics (positivo agranda). |
+| `gesture` | `{name: "left" \| "right" \| "up" \| "down"}` | Alt + Shift + Tab, Alt + Tab, Win + Tab y Win + D. |
+| `ping` | `{t}` | La PC responde `pong` con el mismo `t` (no lleva `n` ni pasa por el orden). |
 | `laser` | `{on: true \| false}` | Muestra u oculta el punto láser. Sigue donde quedó; solo empieza al centro la primera vez o si la ventana activa pasó a otra pantalla. |
 | `laser_move` | `{x, y}` en píxeles | Mueve el punto láser (sin tocar el mouse). |
 
-Todos los eventos menos `hello` llevan además un número `n` que empieza en 1 con cada `hello`. Realtime puede entregar desordenados dos mensajes enviados casi juntos, así que la PC ejecuta clics, arrastres y teclas según ese número. Si falta uno, espera hasta 150 ms y, si no llega, sigue sin él (Broadcast no reintenta). `move` y `scroll` se aplican apenas llegan, porque sumar desplazamientos da lo mismo en cualquier orden; así el cursor nunca se frena esperando otro mensaje. Antes de un clic o una tecla, la PC termina de aplicar el movimiento pendiente. El celular no envía órdenes hasta recibir `accepted`.
+Todos los eventos menos `hello` y `ping` llevan además un número `n` que empieza en 1 con cada `hello`. Realtime puede entregar desordenados dos mensajes enviados casi juntos, así que la PC ejecuta clics, arrastres y teclas según ese número. Si falta uno, espera hasta 150 ms y, si no llega, sigue sin él (Broadcast no reintenta). `move` y `scroll` se aplican apenas llegan, porque sumar desplazamientos da lo mismo en cualquier orden; así el cursor nunca se frena esperando otro mensaje. Antes de un clic o una tecla, la PC termina de aplicar el movimiento pendiente. El celular no envía órdenes hasta recibir `accepted`.
 
 La PC no mueve el cursor de golpe con cada `move`: lo reparte en pasos de 4 ms a lo largo del intervalo con que suelen llegar (lo mide sobre la marcha), para que se vea fluido.
 
@@ -97,7 +119,7 @@ Si en 8 segundos no se abre, o la conexión se cae, el celular vuelve a Supabase
 
 Medido en la misma computadora: de 100 ms por Supabase a unos 6 ms por la conexión directa. Por Wi-Fi se suman algunos milisegundos.
 
-De la PC al celular: `status` con `{state: "pending" | "accepted" | "rejected" | "closed"}`.
+De la PC al celular: `status` con `{state: "pending" | "accepted" | "rejected" | "closed"}`, y `pong` `{t}` (por Broadcast o por el mismo canal directo por el que llegó el `ping`).
 
 Presence: la PC se registra con la clave `host` y el celular con `guest`. Con eso cada uno sabe si el otro está en línea.
 

@@ -34,6 +34,7 @@ jobs:
           pyinstaller --noconfirm --clean --onefile --windowed --name Vincle
           --icon icon.ico --add-data "icon.ico;."
           --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32
+          --hidden-import pystray._win32
           vincle.py
       - name: Crear la versión con el .exe
         env:

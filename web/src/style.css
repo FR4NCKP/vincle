@@ -12,6 +12,10 @@
   --accent: #E5322D; /* el rojo del láser, único color de acento */
   --ok: #34A86B;
   --font: 'Poppins', 'Segoe UI', system-ui, sans-serif;
+  --glow: rgba(255, 255, 255, .9); /* luz de las ondas y destellos */
+  --glow-soft: rgba(255, 255, 255, .35);
+  --veil: rgba(231, 234, 240, .7); /* fondo detrás de Ajustes */
+  --warn: #E0A100;
 
   --raised: 7px 7px 15px var(--dark), -7px -7px 15px var(--light);
   --raised-sm: 4px 4px 9px var(--dark), -4px -4px 9px var(--light);
@@ -22,6 +26,35 @@
   --r-md: 18px;
   /* Alto visible real: se actualiza con visualViewport cuando aparece el teclado. */
   --vvh: 100dvh;
+}
+
+/* Tema oscuro: el mismo relieve, con la superficie gris carbón. Sigue al sistema salvo que en
+   Ajustes se elija otro (data-theme en <html>). */
+:root[data-theme="dark"] {
+  --bg: #2A2E36;
+  --light: #363B46;
+  --dark: #1C1F25;
+  --ink: #E7EAF0;
+  --ink-2: #C3C8D1;
+  --muted: #8D95A3;
+  --glow: rgba(255, 255, 255, .16);
+  --glow-soft: rgba(255, 255, 255, .06);
+  --veil: rgba(20, 22, 27, .7);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #2A2E36;
+    --light: #363B46;
+    --dark: #1C1F25;
+    --ink: #E7EAF0;
+    --ink-2: #C3C8D1;
+    --muted: #8D95A3;
+    --glow: rgba(255, 255, 255, .16);
+    --glow-soft: rgba(255, 255, 255, .06);
+    --veil: rgba(20, 22, 27, .7);
+    color-scheme: dark;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -80,6 +113,8 @@ button.raised-sm:active { box-shadow: var(--inset-sm); }
 .status > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: blink 1.2s ease-in-out infinite; }
 .status.ok .dot { background: var(--ok); animation: none; box-shadow: 0 0 6px rgba(52, 168, 107, .6); }
+/* Más de 150 ms de ida y vuelta: se nota el retraso, el punto pasa a ámbar. */
+.status.slow .dot { background: var(--warn); box-shadow: 0 0 6px rgba(224, 161, 0, .6); }
 @keyframes blink { 50% { opacity: .3; } }
 
 /* ---------- Encabezados ---------- */
@@ -133,7 +168,7 @@ button.raised-sm:active { box-shadow: var(--inset-sm); }
 .surface-hint { position: absolute; left: 20px; bottom: 18px; font-size: 11.5px; line-height: 1.6; color: var(--muted); pointer-events: none; }
 
 .typing { flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
-.type-wrap { height: 52px; border-radius: 26px; padding: 0 18px; display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.type-wrap { height: 52px; border-radius: 26px; padding: 0 6px 0 18px; display: flex; align-items: center; gap: 10px; color: var(--muted); }
 .type-field { flex: 1 1 auto; min-width: 0; height: 100%; border: none; background: transparent; font-size: 15px; color: var(--ink); outline: none; }
 .type-field::placeholder { color: var(--muted); }
 .keybar { display: none; gap: 8px; }
@@ -171,12 +206,60 @@ button.raised-sm:active { box-shadow: var(--inset-sm); }
 .chip { white-space: nowrap; height: 42px; border: none; border-radius: 21px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
 
 /* ---------- Ajustes ---------- */
-dialog { width: min(360px, calc(100% - 40px)); border: none; border-radius: var(--r-lg); padding: 22px; color: var(--ink); }
-dialog::backdrop { background: rgba(231, 234, 240, .7); backdrop-filter: blur(4px); }
-dialog form { display: flex; flex-direction: column; gap: 16px; }
+dialog { width: min(360px, calc(100% - 40px)); max-height: calc(100dvh - 32px); overflow-y: auto; border: none; border-radius: var(--r-lg); padding: 22px; color: var(--ink); }
+dialog::backdrop { background: var(--veil); backdrop-filter: blur(4px); }
+dialog form { display: flex; flex-direction: column; gap: 14px; }
 .field-label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; }
 .field-label output { color: var(--muted); font-weight: 400; }
 input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 12px; border-radius: 6px; background: var(--bg); box-shadow: var(--inset-sm); outline: none; margin: 4px 0 8px; }
 input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; border-radius: 50%; background: var(--bg); box-shadow: var(--raised-sm); border: none; }
 input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; border-radius: 50%; background: var(--bg); box-shadow: var(--raised-sm); border: none; }
 dialog .pill-btn { height: 52px; justify-content: center; padding: 0; }
+
+/* ---------- Pestañas del control ---------- */
+.tabs { flex-shrink: 0; position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); height: 46px; border-radius: 23px; padding: 5px; --tab: 0; }
+.tab-thumb { position: absolute; top: 5px; bottom: 5px; left: 5px; width: calc((100% - 10px) / 3); border-radius: 18px; transform: translateX(calc(var(--tab) * 100%)); transition: transform .4s var(--spring); }
+.tabs button { position: relative; z-index: 1; min-width: 0; border: none; border-radius: 18px; background: none; padding: 0 4px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--muted); transition: color .2s; }
+.tabs button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); }
+.tabs button[aria-selected="true"] svg { color: var(--accent); }
+.panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+.panel[hidden] { display: none; }
+/* El botón del teclado solo tiene sentido en el trackpad; al escribir, las pestañas se ocultan
+   para dejarle el espacio al trackpad. */
+#remote:not([data-panel="pad"]) #toggle-keys { display: none; }
+.typing-on .tabs { display: none; }
+
+/* ---------- Dictado ---------- */
+.mic { width: 40px; height: 40px; }
+.mic[hidden] { display: none; }
+.mic[aria-pressed="true"] { background: var(--accent); color: #fff; box-shadow: none; animation: listen 1.4s ease-out infinite; }
+@keyframes listen { from { box-shadow: 0 0 0 0 rgba(229, 50, 45, .5); } to { box-shadow: 0 0 0 12px rgba(229, 50, 45, 0); } }
+
+/* ---------- Multimedia ---------- */
+.media-card { flex: 1 1 auto; min-height: 0; margin-bottom: calc(20px + env(safe-area-inset-bottom)); }
+.transport { flex: 1 1 auto; min-height: 110px; display: flex; align-items: center; justify-content: center; gap: clamp(14px, 6vw, 28px); }
+.media-btn { flex-shrink: 0; width: 64px; height: 64px; border: none; border-radius: 50%; display: grid; place-items: center; padding: 0; color: var(--ink-2); }
+.media-btn.play { width: 96px; height: 96px; color: var(--accent); }
+.media-btn.pulse svg { animation: pulse .45s var(--spring); }
+@keyframes pulse { 40% { transform: scale(.8); } }
+.volume-label { margin-bottom: -4px; }
+.volume { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.volume .tile { justify-content: center; min-height: 62px; padding: 0; color: var(--ink-2); }
+
+/* ---------- Ajustes: opciones en segmentos y computadoras de confianza ---------- */
+.seg-field { border: none; margin: 0; padding: 0; min-width: 0; }
+.seg-field legend { padding: 0; margin-bottom: 8px; width: 100%; }
+.seg { display: flex; gap: 4px; padding: 4px; border-radius: 16px; }
+.seg label { position: relative; flex: 1 1 0; min-width: 0; }
+.seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.seg span { display: block; padding: 8px 4px; border-radius: 12px; text-align: center; font-size: 12.5px; color: var(--muted); transition: box-shadow .2s, color .2s; }
+.seg input:checked + span { box-shadow: var(--raised-sm); color: var(--ink); font-weight: 500; }
+.seg input:focus-visible + span { outline: 2px solid var(--ink-2); outline-offset: 2px; }
+.trusted-list ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.trusted-list li { border-radius: 14px; padding: 7px 7px 7px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.trusted-list li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trusted-list .chip { height: 34px; padding: 0 14px; color: var(--accent); }
+.trusted-note { display: flex; align-items: center; gap: 10px; border-radius: var(--r-md); padding: 12px 14px; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.trusted-note[hidden] { display: none; }
+.trusted-note .dot { background: var(--ok); }
